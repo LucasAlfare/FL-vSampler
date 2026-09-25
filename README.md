@@ -9,8 +9,6 @@
                                                       ▀▀                   
 ```
 
-# FL-vSampler
-
 A Kotlin tool that turns a MIDI file into a video performance using pre-recorded videos of individual instrument notes.
 
 The MIDI file controls the musical timeline, while the recorded samples provide the audio and visual performance.
@@ -20,12 +18,12 @@ The MIDI file controls the musical timeline, while the recorded samples provide 
 The complete pipeline is:
 
 ```text
-MIDI
- ↓
-FLMidi
- ↓
-MIDI Timeline
- ↓
+            MIDI
+             ↓
+           FLMidi
+             ↓
+        MIDI Timeline
+             ↓
  ┌────────────────────────┐
  │                        │
  ▼                        ▼
@@ -333,6 +331,8 @@ Ideally, use MIDI with:
 - A musical structure compatible with the available samples.
 
 The current visual renderer does not yet implement sophisticated visualization of simultaneous notes, so dense MIDI files and overlapping notes may produce undesirable visual results.
+
+For input notes sample clips you *must* make sure that each of than is cut exactly when the note is started; in other words, the sample must not have any kind of micro-silence before the note starts. Ideally, you can cut your samples right after the note started playing, this may avoid gaps between notes problems.
 
 ## Current Limitations
 
