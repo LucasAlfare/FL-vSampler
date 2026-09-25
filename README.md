@@ -9,189 +9,230 @@
                                                       ▀▀                   
 ```
 
-A small Kotlin tool that turns a MIDI file into a video performance using pre-recorded videos of individual instrument notes.
+# FL-vSampler
 
-The MIDI file controls the musical timeline, while video samples provide the visual performance.
+A Kotlin tool that turns a MIDI file into a video performance using pre-recorded videos of individual instrument notes.
 
-## Motivation
+The MIDI file controls the musical timeline, while the recorded samples provide the audio and visual performance.
 
-This project exists for two reasons.
+## How It Works
 
-The first is the audiovisual idea itself: using a MIDI performance to control a sequence of real recorded instrument videos.
-
-The second, and more personal one, is to **give a real purpose to libraries I built from scratch**.
-
-The MIDI layer of this project is powered by **[FLMidi](https://github.com/LucasAlfare/FLMidi/)**, my own MIDI library written entirely from scratch in Kotlin.
-
-FLMidi was not created in isolation. It was built on top of another personal library, **[FLBinary](https://github.com/LucasAlfare/FLBinary/)**, responsible for reading and writing binary data.
-
-The relationship is essentially:
+The complete pipeline is:
 
 ```text
-[FLBinary]
-    ↓
- [FLMidi]
-    ↓
-[FL-vSampler]
-    ↓
- Final Video
-```
-
-[FLBinary](https://github.com/LucasAlfare/FLBinary/) was built from scratch to understand and manipulate raw binary data.
-
-[FLMidi](https://github.com/LucasAlfare/FLMidi/) was then built on top of it to understand MIDI files.
-
-**FL-vSampler** is the next step: taking that MIDI library and using it for something practical, visual and creative.
-
-In other words, this project is not only about rendering MIDI.
-
-It is also about **putting several pieces I built from scratch to use in a real project**.
-
-## Philosophy
-
-The project follows a simple philosophy:
-
-> Build things from scratch, understand how they work, and eventually use them to create something real.
-
-There is no need for a large framework or an overly abstract architecture.
-
-The processing pipeline is intentionally straightforward:
-
-```text
-Recorded Samples
-       +
-      MIDI
-       ↓
-Sample Library
-       ↓
-Pause Source
-       ↓
-     FLMidi
-       ↓
-  MIDI Timeline
-       ↓
-  Video Planner
-       ↓
-Video Segment Generator
-       ↓
-Video Concatenator
-       ↓
-   Final Video
-```
-
-The MIDI file controls **when** things happen.
-
-The recorded samples determine **what** is shown.
-
-Periods where no note is being played become pause segments.
-
-The goal is to keep every part of this process understandable and verifiable.
-
-## The Library Stack
-
-One of the interesting aspects of FL-vSampler is that the application is built on top of multiple personal libraries.
-
-### FLBinary
-
-**[FLBinary](https://github.com/LucasAlfare/FLBinary/)** is the foundation.
-
-It is a library I wrote from scratch for reading and writing binary data.
-
-Its purpose is to make low-level binary operations explicit and understandable instead of relying entirely on existing abstractions.
-
-### FLMidi
-
-**[FLMidi](https://github.com/LucasAlfare/FLMidi/)** is my own MIDI library, also written from scratch in Kotlin.
-
-It uses FLBinary to parse MIDI files and expose their musical structure.
-
-It is responsible for things such as:
-
-* MIDI tracks
-* MIDI events
-* note-on events
-* note-off events
-* velocities
-* tempo changes
-* MIDI timing
-
-### FL-vSampler
-
-**FL-vSampler** uses FLMidi as part of a larger practical application.
-
-The renderer takes the musical information extracted by FLMidi and connects it to real video samples.
-
-This creates a small stack of personally built software:
-
-```text
-FLBinary
-   ↓
-Binary data
-   ↓
+MIDI
+ ↓
 FLMidi
-   ↓
-MIDI data
-   ↓
-Musical timeline
-   ↓
-FL-vSampler
-   ↓
-Video rendering
+ ↓
+MIDI Timeline
+ ↓
+ ┌────────────────────────┐
+ │                        │
+ ▼                        ▼
+Audio Pipeline       Video Pipeline
+ │                        │
+ ▼                        ▼
+Sample Audio         Sample Frames
+ │                        │
+ ▼                        ▼
+Float32 RAM          LRU Frame Cache
+ │                        │
+ ▼                        ▼
+Chunked Mixing       Lazy Extraction
+ │                        │
+ ▼                        ▼
+Peak Analysis        Frame Streaming
+ │                        │
+ ▼                        │
+Normalized WAV            │
+ │                        │
+ └────────────┬───────────┘
+              ▼
+            FFmpeg
+              ↓
+          output.mp4
 ```
 
-That progression is one of the main reasons this project exists.
+## 1. Read the MIDI
 
-## Rendering Strategy
+The MIDI file is read using **[FLMidi](https://github.com/LucasAlfare/FLMidi/)**.
 
-A MIDI note such as:
+The MIDI events are converted into a timeline containing:
+
+- Note.
+- Start time.
+- Duration.
+- Velocity.
+- Tempo information.
+
+The timeline becomes the timing reference for both audio and video.
+
+## 2. Load the Samples
+
+The project expects one video sample for each instrument note:
 
 ```text
-C4
-start: 1000 ms
-duration: 500 ms
+samples/
+├── C3.mp4
+├── C#3.mp4
+├── D3.mp4
+├── D#3.mp4
+├── E3.mp4
+└── ...
 ```
 
-is converted into a video segment using:
+An optional pause sample can also be provided:
 
 ```text
-samples/C4.mp4
+samples/pause.mp4
 ```
 
-A gap in the MIDI timeline becomes a pause segment.
+The sample videos contain both the instrument audio and the visual performance.
 
-For example:
+Sample videos should ideally have consistent duration, resolution and frame rate.
+
+## 3. Prepare the Audio
+
+Only the audio from the sample videos actually required by the MIDI is extracted.
+
+FFmpeg converts the audio to:
 
 ```text
-C4 ──────
-         500 ms pause
-                  E4 ─────
+48 kHz
+Stereo
+PCM16
 ```
 
-becomes:
+The samples are then represented as `Float32` data in RAM.
+
+The complete final audio is not stored in RAM.
+
+## 4. Generate the Master Audio
+
+The MIDI timeline is processed in configurable chunks.
+
+For each note, its corresponding sample audio is placed at the correct position in the timeline.
+
+Overlapping notes are mixed together.
+
+A short fade-out is applied at the end of note playback.
+
+The audio rendering happens in two passes.
+
+### Pass 1
+
+The complete timeline is analyzed to find the global audio peak.
+
+### Pass 2
+
+The timeline is processed again, applying the normalization factor and writing the final audio incrementally to:
 
 ```text
-C4.mp4 → pause.mp4 → E4.mp4
+master_audio.wav
 ```
 
-Each segment is generated independently with FFmpeg.
+## 5. Generate the Video Frames
 
-The resulting segments are then concatenated into the final video.
+The final video is processed frame by frame.
 
-Pause videos are looped when necessary.
+For each output frame, the renderer determines:
 
-If no pause video exists, FL-vSampler uses a generated black background.
+1. The current MIDI timeline position.
+2. Which note or pause is active.
+3. Which sample video should be used.
+4. Which frame from that sample corresponds to the current position.
+
+The complete source videos are never loaded into RAM.
+
+Only the required frames are extracted.
+
+## 6. Frame Cache
+
+Extracted frames are stored in an LRU cache in RAM.
+
+The cache has a configurable maximum size, for example:
+
+```text
+512 MB
+```
+
+When a requested frame is already cached, it is reused.
+
+When it is not cached, FFmpeg extracts the frame and it is added to the cache.
+
+When the cache reaches its limit, the least recently used frames are removed.
+
+This keeps video memory usage bounded regardless of the length of the final MIDI performance.
+
+```text
+Request Frame
+     ↓
+   Cache?
+ ┌───┴───┐
+Yes      No
+ │        │
+ ▼        ▼
+Reuse   FFmpeg
+          ↓
+       JPEG Frame
+          ↓
+        Cache
+```
+
+## 7. Stream the Video
+
+The generated JPEG frames are sent directly to FFmpeg through a pipe.
+
+The complete video is therefore never accumulated in memory and no intermediate video segment is created for every MIDI note.
+
+```text
+Sample Video
+     ↓
+Frame Extraction
+     ↓
+JPEG
+     ↓
+LRU Cache
+     ↓
+image2pipe
+     ↓
+FFmpeg
+```
+
+## 8. Create the Final Video
+
+FFmpeg receives:
+
+```text
+Video frames → image2pipe
+Audio        → master_audio.wav
+```
+
+and produces:
+
+```text
+output.mp4
+```
+
+The final encoding uses:
+
+- H.264 / libx264 for video.
+- AAC for audio.
+- `yuv420p` pixel format.
+
+The final result is a continuous video synchronized to the MIDI timeline.
 
 ## Requirements
 
 ### Java / Kotlin
 
-A Kotlin/JVM project with a compatible JDK.
+A compatible Kotlin/JVM environment and JDK.
 
 ### FFmpeg
 
 FFmpeg must be installed and available through the system `PATH`.
 
-Verify it with:
+Verify with:
 
 ```bash
 ffmpeg -version
@@ -199,35 +240,33 @@ ffmpeg -version
 
 ### FLMidi
 
-The project requires my personal **[FLMidi](https://github.com/LucasAlfare/FLMidi/)** library and its dependencies, including **[FLBinary](https://github.com/LucasAlfare/FLBinary/)**.
+The project uses:
 
-The exact API is specific to this project.
+- **[FLMidi](https://github.com/LucasAlfare/FLMidi/)** — MIDI parsing.
+- **[FLBinary](https://github.com/LucasAlfare/FLBinary/)** — binary data handling used by FLMidi.
 
 ## Project Structure
-
-The application expects:
 
 ```text
 project/
 ├── samples/
 │   ├── C3.mp4
+│   ├── C#3.mp4
 │   ├── D3.mp4
+│   ├── D#3.mp4
 │   ├── E3.mp4
-│   └── ...
+│   ├── ...
+│   └── pause.mp4
 ├── input.mid
 └── src/
     └── ...
 ```
 
-The pause video is optional:
+The pause sample is optional.
 
-```text
-samples/pause.mp4
-```
+If it is unavailable, the renderer can use a fallback frame for pauses.
 
-If it does not exist, a black background is used.
-
-Sample names must match MIDI note names:
+Sample filenames must match MIDI note names:
 
 ```text
 C3.mp4
@@ -240,138 +279,83 @@ E3.mp4
 
 ## Usage
 
-Place the MIDI file at:
+1. Place the MIDI file at:
 
 ```text
 input.mid
 ```
 
-Place the recorded note videos inside:
+2. Place the recorded note videos inside:
 
 ```text
 samples/
 ```
 
-Then run the Kotlin application.
+3. Make sure FFmpeg is available through `PATH`.
 
-FL-vSampler will:
+4. Run the Kotlin application.
 
-1. Load the samples.
-2. Load the pause source.
-3. Read the MIDI file using FLMidi.
-4. Build the MIDI timeline.
-5. Create the video rendering plan.
-6. Generate the individual video segments.
-7. Concatenate the segments.
-
-The final video is:
+The renderer will:
 
 ```text
+Read MIDI
+    ↓
+Build timeline
+    ↓
+Extract required sample audio
+    ↓
+Generate normalized master audio
+    ↓
+Generate video frames on demand
+    ↓
+Cache frames in RAM
+    ↓
+Stream frames to FFmpeg
+    ↓
+Combine video + master audio
+    ↓
 output.mp4
 ```
 
-Temporary segments are generated inside:
-
-```text
-render/
-```
-
-and removed after the pipeline finishes.
+Temporary rendering data is removed when processing finishes.
 
 ## Usage Tips
 
-The quality of the input MIDI can have a significant impact on the final video.
+For better results, prepare or clean up the MIDI before rendering.
 
-For better results, it is recommended to **prepare or clean up the MIDI file before using it with FL-vSampler**.
+Ideally, use MIDI with:
 
-Ideally, use a MIDI file with:
+- Correct notes.
+- Reasonable note durations.
+- Clean timing.
+- No duplicated or accidental notes.
+- As few unnecessary overlapping notes as possible.
+- A musical structure compatible with the available samples.
 
-* Correct note information.
-* Reasonable note durations.
-* As few unnecessary overlapping notes as possible.
-* Clean timing.
-* No duplicated or accidental notes.
-* A musical structure that makes sense for the video samples being used.
-
-In particular, **overlapping notes and unnecessarily dense MIDI data can produce undesirable results**, since the current renderer treats MIDI notes individually and does not yet have a sophisticated system for handling simultaneous notes.
-
-A cleaner MIDI file generally produces a cleaner video.
-
-If possible, prepare the MIDI specifically for the rendering process rather than simply using an arbitrary MIDI file downloaded from the internet.
-
-## Rendering Cache
-
-The segment generator contains a small cache.
-
-When the same source video is required with the same duration, it is rendered once and reused.
-
-Segment generation also uses a limited number of workers so that multiple FFmpeg processes can run concurrently without creating an excessive number of processes.
+The current visual renderer does not yet implement sophisticated visualization of simultaneous notes, so dense MIDI files and overlapping notes may produce undesirable visual results.
 
 ## Current Limitations
 
-The first version intentionally keeps the feature set small.
+The current implementation does not yet provide:
 
-It currently does not implement:
+- Proper visual chords / simultaneous-note composition.
+- Velocity-dependent samples.
+- Articulations.
+- Bends.
+- Slides.
+- Sustain.
+- Multiple instruments.
+- Multiple cameras.
+- Visual effects.
+- Automatic sample selection.
+- Advanced musical expression.
 
-* **Chords / simultaneous notes** — multiple notes occurring at the same time are not yet handled as a proper visual chord or multi-video composition.
-* Velocity-dependent samples.
-* Articulations.
-* Bends.
-* Slides.
-* Sustain.
-* Multiple instruments.
-* Multiple cameras.
-* Transitions.
-* Visual effects.
-* Audio synchronization.
-* Automatic sample selection.
-
-### Micro-pauses between clips
-
-There is currently a known issue where a very small **micro-pause can sometimes appear between concatenated video clips**.
-
-The exact cause has not yet been identified.
-
-The segments are generated individually and then concatenated with FFmpeg, but for some reason the final video may contain tiny gaps or visual pauses between clips.
-
-This is one of the current problems I am still investigating.
-
-**Suggestions and ideas for solving this are very welcome.**
-
-If you have experience with FFmpeg concatenation, video timestamps, keyframes, frame boundaries, codecs, or related issues, feel free to suggest possible causes or solutions.
-
-## Development Philosophy
-
-The project is intentionally kept simple during development.
-
-The current implementation uses a single Kotlin source file so that the entire pipeline can be inspected and understood easily.
-
-The development priority is:
-
-```text
-Understand
-    ↓
-Build from scratch
-    ↓
-Use in a real project
-    ↓
-Validate
-    ↓
-Optimize
-    ↓
-Extend
-```
-
-The objective is not to create the most sophisticated MIDI renderer possible.
-
-It is to take low-level code written from scratch, build useful abstractions on top of it, and eventually turn those abstractions into something creative and practical.
+The audio pipeline can mix overlapping notes, but the visual pipeline still selects a primary sample for each output position.
 
 ## Related Projects
 
-This project is built on top of two personal libraries:
-
-* **[FLBinary](https://github.com/LucasAlfare/FLBinary/)** — low-level binary data reading and writing.
-* **[FLMidi](https://github.com/LucasAlfare/FLMidi/)** — MIDI parsing and interpretation built on top of FLBinary.
+- **[FLBinary](https://github.com/LucasAlfare/FLBinary/)** — binary data reading and writing.
+- **[FLMidi](https://github.com/LucasAlfare/FLMidi/)** — MIDI parsing and interpretation built on top of FLBinary.
 
 ## [LICENSE](LICENSE)
 
