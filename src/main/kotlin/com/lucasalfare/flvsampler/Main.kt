@@ -5,16 +5,245 @@ import com.lucasalfare.flmidi.MidiReader
 import com.lucasalfare.flmidi.NoteOffControlEvent
 import com.lucasalfare.flmidi.NoteOnControlEvent
 import com.lucasalfare.flmidi.SetTempoMetaEvent
+import java.awt.Color
+import java.awt.RenderingHints
+import java.awt.image.BufferedImage
+import java.awt.image.DataBufferInt
 import java.io.BufferedOutputStream
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.Arrays
 import java.util.LinkedHashMap
 import java.util.Locale
+import javax.imageio.ImageIO
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.cos
+
+/*
+Você vai implementar suporte a acordes neste seguinte projeto.
+
+## OBJETIVO ABSOLUTO
+
+Transformar o renderer de vídeo de um sistema que renderiza apenas um sample por vez em um sistema capaz de renderizar simultaneamente todos os samples correspondentes às notas MIDI que estiverem ativas naquele instante.
+
+REGRA PRINCIPAL:
+
+**O comportamento atual para uma única nota deve continuar funcionando. Quando houver N notas simultaneamente ativas, o vídeo deve mostrar os N samples simultaneamente organizados em uma grade, sem alterar a lógica de síntese de áudio.**
+
+Não reescreva partes funcionais sem necessidade.
+
+## RESTRIÇÕES
+
+1. Não modificar desnecessariamente `MidiEventReader`.
+2. Não modificar a API nem a implementação de FLMidi.
+3. Não modificar a lógica existente de síntese de áudio para implementar acordes.
+4. Manter `MidiTimeline` e `TimelineNote` funcionando para o áudio.
+5. Criar uma representação visual separada para os acordes.
+6. Manter compatibilidade total com MIDI monofônico.
+7. Não fazer otimizações prematuras.
+8. Não introduzir frameworks ou dependências externas.
+9. Preferir classes pequenas e responsabilidades claras.
+10. Não remover a documentação existente.
+11. Não criar uma arquitetura excessivamente abstrata.
+
+## SEMÂNTICA DOS ACORDES
+
+Não agrupe somente notas que possuem exatamente o mesmo `start`.
+
+A timeline visual deve representar o conjunto de notas efetivamente ativas em cada intervalo de tempo.
+
+Use todos os pontos de início e fim das notas como boundaries temporais.
+
+Exemplo:
+
+C4: 1000–2000
+E4: 1000–1500
+G4: 1000–2000
+
+Deve produzir:
+
+1000–1500 → [C4, E4, G4]
+1500–2000 → [C4, G4]
+
+Outro exemplo:
+
+C4: 1000–2000
+E4: 1200–1800
+
+Deve produzir:
+
+1000–1200 → [C4]
+1200–1800 → [C4, E4]
+1800–2000 → [C4]
+
+Portanto, a unidade de renderização visual deve ser um segmento temporal contendo uma lista de notas ativas.
+
+## NOVA TIMELINE VISUAL
+
+Criar uma estrutura separada para vídeo, por exemplo:
+
+* `VideoTimelineEvent`
+* `VideoNotesSegment`
+* `VideoTimeline`
+
+Os nomes podem ser ajustados caso exista nomenclatura melhor no projeto, mas a responsabilidade deve permanecer separada da timeline usada pelo áudio.
+
+Cada segmento deve possuir:
+
+* `start`
+* `duration`
+* `notes`
+
+Uma lista vazia de notas representa pausa.
+
+Ignorar notas com duração zero.
+
+## LAYOUT
+
+Implementar inicialmente exatamente estas regras:
+
+1 nota  → 1×1
+2 notas → 2×1
+3 notas → 3×1
+4 notas → 2×2
+
+Para mais de 4 notas, não inventar uma regra silenciosamente. Gerar erro explícito e facilmente modificável.
+
+Criar uma pequena abstração para representar o layout:
+
+* número de colunas
+* número de linhas
+
+## COMPOSIÇÃO DOS FRAMES
+
+O renderer atual obtém frames individuais dos arquivos dos samples e os envia para o FFmpeg.
+
+Manter essa estratégia.
+
+Quando houver várias notas ativas:
+
+1. obter o frame correspondente de cada sample;
+2. redimensionar cada frame para sua célula;
+3. preservar a proporção original do vídeo;
+4. centralizar o vídeo dentro da célula;
+5. preencher áreas restantes com preto;
+6. montar todos os frames em uma única imagem;
+7. enviar somente essa imagem final para o pipe do FFmpeg.
+
+Não iniciar um processo FFmpeg separado para cada sample ou para cada frame.
+
+Usar as APIs padrão da JVM disponíveis no projeto para decodificação, composição, redimensionamento e codificação dos frames, evitando novas dependências.
+
+## RESOLUÇÃO
+
+O renderer atual trabalha com frames-base de 1280×720.
+
+Manter 1280×720 como canvas final.
+
+A grade deve dividir o canvas entre suas células.
+
+Não distorcer os vídeos para preencher a célula. Preservar a proporção 16:9 e usar letterboxing quando necessário.
+
+## TEMPO DOS SAMPLES
+
+Para cada nota ativa, calcular o frame usando o tempo decorrido desde `note.start`.
+
+Não usar o início do segmento visual como referência para o sample.
+
+Por exemplo:
+
+`sampleFrameIndex = elapsedSinceNoteStart * fps`
+
+Assim uma nota que entrou no acorde depois do seu início original continuará sendo reproduzida do ponto correto.
+
+## NOTAS QUE TERMINAM ANTES
+
+Quando uma nota de um acorde terminar antes das outras, ela deixa de fazer parte do conjunto ativo.
+
+A célula correspondente deve mostrar o primeiro frame do `pause.mp4`, quando esse arquivo existir.
+
+Usar o mecanismo de pause/fallback já existente como base.
+
+## PIPELINE
+
+Adicionar ao `PipelineContext` a timeline visual separada.
+
+A pipeline deve ficar conceitualmente:
+
+read MIDI
+→ create audio timeline
+→ create video timeline
+→ initialize engines
+→ load samples
+→ synthesize audio
+→ render video
+→ cleanup
+
+A síntese de áudio deve continuar recebendo a timeline original com `TimelineNote`, pois ela já suporta sobreposição de notas.
+
+## RENDERER
+
+Modificar `MemoryVideoRenderer` para trabalhar com os segmentos visuais.
+
+O comportamento monofônico deve continuar equivalente ao comportamento atual:
+
+um segmento com uma nota deve simplesmente resultar em um frame daquela nota.
+
+Para segmentos com múltiplas notas, gerar o frame composto.
+
+Eliminar a premissa atual de que existe apenas um `activeEvent` visual por frame.
+
+## CACHE
+
+Manter `RamFrameCache`.
+
+Inicialmente, não alterar sua estratégia nem criar um novo sistema de cache.
+
+Somente adaptar o fluxo para permitir vários frames por frame composto.
+
+Depois da implementação funcional, analisar eventuais gargalos.
+
+## LOGS
+
+Manter os logs existentes e adicionar apenas os necessários para diagnóstico.
+
+Durante a leitura da timeline visual, informar quantos segmentos existem e, se útil, a maior quantidade de notas simultâneas encontrada.
+
+Durante o render, informar a configuração da grade quando ela mudar, sem imprimir uma linha para cada frame.
+
+## TESTES FUNCIONAIS OBRIGATÓRIOS
+
+Verificar explicitamente:
+
+* 1 nota;
+* 2 notas simultâneas;
+* 3 notas simultâneas;
+* 4 notas simultâneas;
+* acordes com durações diferentes;
+* notas sobrepostas com starts diferentes;
+* pausas;
+* sample inexistente;
+* `pause.mp4` inexistente;
+* mais de 4 notas simultaneamente.
+
+Critério principal:
+
+**O áudio deve permanecer exatamente com a semântica atual, enquanto o vídeo passa a representar visualmente todas as notas ativas.**
+
+Antes de alterar código, analise as classes existentes e reaproveite o que já existe.
+
+Ao final:
+
+1. apresente a estrutura final dos arquivos;
+2. apresente o código completo dos arquivos alterados ou criados;
+3. não omita trechos importantes com comentários como `// restante do código`;
+4. explique brevemente quais responsabilidades foram separadas;
+5. confirme que a lógica de áudio não foi alterada.
+ */
 
 object Profiler {
   fun logMemory(tag: String) {
@@ -26,8 +255,8 @@ object Profiler {
 
   inline fun <T> measure(tag: String, block: () -> T): T {
     println(); println("[PROFILER] Starting: $tag"); logMemory("Before $tag")
-    val start = System.currentTimeMillis();
-    val result = block();
+    val start = System.currentTimeMillis()
+    val result = block()
     val elapsed = System.currentTimeMillis() - start
     logMemory("After $tag"); println("[PROFILER] Completed: $tag in $elapsed ms (${elapsed / 1000.0}s)")
     return result
@@ -98,11 +327,11 @@ class MidiEventReader {
     division: Int,
     result: MutableList<NoteEvent>
   ) {
-    val key = channel to note;
+    val key = channel to note
     val notes = activeNotes[key] ?: return
     if (notes.isEmpty()) return
     val started = notes.removeAt(0)
-    val start = ticksToMillis(started.tick, tempos, division);
+    val start = ticksToMillis(started.tick, tempos, division)
     val end = ticksToMillis(endTick, tempos, division)
     result += NoteEvent(
       note = midiNoteName(note),
@@ -114,13 +343,14 @@ class MidiEventReader {
   }
 
   private fun ticksToMillis(targetTick: Long, tempos: List<TempoEvent>, division: Int): Long {
-    var currentTick = 0L;
-    var tempo = DEFAULT_TEMPO.toLong();
+    var currentTick = 0L
+    var tempo = DEFAULT_TEMPO.toLong()
     var microseconds = 0L
     for (change in tempos) {
       if (change.tick > targetTick) break
       microseconds += (change.tick - currentTick) * tempo / division
-      currentTick = change.tick; tempo = change.tempo.toLong()
+      currentTick = change.tick
+      tempo = change.tempo.toLong()
     }
     microseconds += (targetTick - currentTick) * tempo / division
     return microseconds / 1_000L
@@ -165,6 +395,60 @@ class MidiTimeline {
   }
 }
 
+// --- REPRESENTAÇÃO DA TIMELINE VISUAL DE VÍDEO ---
+
+data class VideoNotesSegment(
+  val start: Long,
+  val duration: Long,
+  val notes: List<NoteEvent>
+)
+
+class VideoTimeline {
+  fun create(notes: List<NoteEvent>): List<VideoNotesSegment> {
+    val validNotes = notes.filter { it.duration > 0 }
+    if (validNotes.isEmpty()) return emptyList()
+
+    val boundaries = mutableSetOf<Long>()
+    boundaries.add(0L)
+    for (note in validNotes) {
+      boundaries.add(note.start)
+      boundaries.add(note.start + note.duration)
+    }
+
+    val sortedBoundaries = boundaries.sorted()
+    val segments = mutableListOf<VideoNotesSegment>()
+
+    for (i in 0 until sortedBoundaries.size - 1) {
+      val segStart = sortedBoundaries[i]
+      val segEnd = sortedBoundaries[i + 1]
+      val segDuration = segEnd - segStart
+      if (segDuration <= 0) continue
+
+      val activeNotes = validNotes.filter { note ->
+        note.start <= segStart && (note.start + note.duration) >= segEnd
+      }
+
+      segments.add(VideoNotesSegment(segStart, segDuration, activeNotes))
+    }
+
+    return segments
+  }
+}
+
+data class GridLayout(val cols: Int, val rows: Int) {
+  companion object {
+    fun forNoteCount(count: Int): GridLayout = when (count) {
+      0, 1 -> GridLayout(1, 1)
+      2 -> GridLayout(2, 1)
+      3 -> GridLayout(3, 1)
+      4 -> GridLayout(2, 2)
+      else -> throw IllegalArgumentException(
+        "Número de notas simultâneas não suportado para o layout visual: $count. O limite máximo é 4."
+      )
+    }
+  }
+}
+
 class AudioSample(val left: FloatArray, val right: FloatArray)
 
 class AudioSynthesizer(private val sampleRate: Int = 48_000, private val chunkDurationSeconds: Int = 10) {
@@ -196,7 +480,7 @@ class AudioSynthesizer(private val sampleRate: Int = 48_000, private val chunkDu
     if (dataOffset >= bytes.size) return emptyAudioSample()
     val pcmBytes = bytes.copyOfRange(dataOffset, bytes.size)
     val totalSamples = pcmBytes.size / 4
-    val left = FloatArray(totalSamples);
+    val left = FloatArray(totalSamples)
     val right = FloatArray(totalSamples)
     ByteBuffer.wrap(pcmBytes).order(ByteOrder.LITTLE_ENDIAN).also { buffer ->
       repeat(totalSamples) { i -> left[i] = buffer.short / 32768.0f; right[i] = buffer.short / 32768.0f }
@@ -216,13 +500,13 @@ class AudioSynthesizer(private val sampleRate: Int = 48_000, private val chunkDu
     println("[AUDIO] Master duration: ${totalMs / 1000.0}s"); println("[AUDIO] Total samples: $totalSamples")
     println("[AUDIO] Chunk duration: $chunkDurationSeconds s"); println("[AUDIO] Samples per chunk: $chunkSamples")
 
-    val masterL = FloatArray(chunkSamples);
+    val masterL = FloatArray(chunkSamples)
     val masterR = FloatArray(chunkSamples)
     val totalChunks = (totalSamples + chunkSamples - 1) / chunkSamples
 
     println(); println("[AUDIO] Pass 1/2: calculating global peak...")
-    var maxPeak = 0.0f;
-    var chunkStart = 0;
+    var maxPeak = 0.0f
+    var chunkStart = 0
     var chunkNumber = 0
 
     while (chunkStart < totalSamples) {
@@ -239,7 +523,7 @@ class AudioSynthesizer(private val sampleRate: Int = 48_000, private val chunkDu
 
     println(); println("[AUDIO] Pass 2/2: writing normalized WAV...")
     writeWavStreaming(outputFile, totalSamples, sampleRate) { out ->
-      var processedSamples = 0;
+      var processedSamples = 0
       var currentChunk = 0
       while (processedSamples < totalSamples) {
         val count = minOf(chunkSamples, totalSamples - processedSamples)
@@ -266,7 +550,7 @@ class AudioSynthesizer(private val sampleRate: Int = 48_000, private val chunkDu
     val chunkEnd = chunkStartSample + chunkSampleCount
 
     for (event in timeline) {
-      val key = event.sampleKey();
+      val key = event.sampleKey()
       val sample = samples[key] ?: continue
       val startSample = (event.start * sampleRate / 1000.0).toInt()
       val durationSamples = (event.duration * sampleRate / 1000.0).toInt()
@@ -293,7 +577,7 @@ class AudioSynthesizer(private val sampleRate: Int = 48_000, private val chunkDu
   }
 
   private fun writeWavStreaming(file: File, totalSamples: Int, sampleRate: Int, block: (BufferedOutputStream) -> Unit) {
-    val totalDataLen = totalSamples.toLong() * 4;
+    val totalDataLen = totalSamples.toLong() * 4
     val totalSize = totalDataLen + 36
     require(totalDataLen <= 0xFFFFFFFFL) { "WAV file is too large for classic RIFF PCM." }
     file.outputStream().buffered(64 * 1024)
@@ -313,7 +597,7 @@ class AudioSynthesizer(private val sampleRate: Int = 48_000, private val chunkDu
   }
 
   private fun createWavHeader(totalDataLen: Long, totalSize: Long, sampleRate: Int): ByteArray {
-    val header = ByteArray(44);
+    val header = ByteArray(44)
     val byteRate = sampleRate.toLong() * 4
     header.writeAscii(0, "RIFF"); writeIntLE(header, 4, totalSize); header.writeAscii(8, "WAVE"); header.writeAscii(
       12,
@@ -366,9 +650,9 @@ class RamFrameCache(maxBytes: Long) {
   private data class CacheKey(val source: String, val frameIndex: Int)
 
   private val cache = LinkedHashMap<CacheKey, ByteArray>(16, 0.75f, true)
-  private var currentBytes = 0L;
-  private var hits = 0L;
-  private var misses = 0L;
+  private var currentBytes = 0L
+  private var hits = 0L
+  private var misses = 0L
   private var evictions = 0L
 
   @Synchronized
@@ -386,7 +670,7 @@ class RamFrameCache(maxBytes: Long) {
     cache.remove(key)?.let { currentBytes -= it.size }
     cache[key] = value; currentBytes += valueSize
     while (currentBytes > maxBytes) {
-      val iterator = cache.entries.iterator();
+      val iterator = cache.entries.iterator()
       val eldest = iterator.next()
       currentBytes -= eldest.value.size; iterator.remove(); evictions++
     }
@@ -417,6 +701,13 @@ class RamFrameCache(maxBytes: Long) {
 class MemoryVideoRenderer(private val fps: Int = 60, maxCacheMb: Int = 512) {
   private val frameCache = RamFrameCache(maxBytes = maxCacheMb.toLong() * 1024 * 1024)
 
+  // Cache LRU simples para imagens BufferedImage de samples já decodificados
+  private val decodedImageCache = object : LinkedHashMap<String, BufferedImage>(32, 0.75f, true) {
+    override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, BufferedImage>?): Boolean {
+      return size > 64 // Limite ajustável de quadros decodificados em RAM
+    }
+  }
+
   init {
     require(fps > 0) { "Video FPS must be greater than zero." }
     require(maxCacheMb > 0) { "Frame cache size must be greater than zero." }
@@ -427,6 +718,25 @@ class MemoryVideoRenderer(private val fps: Int = 60, maxCacheMb: Int = 512) {
     val safeFrameIndex = frameIndex.coerceAtLeast(0)
     frameCache.get(sourceKey, safeFrameIndex)?.let { return it }
     return extractSingleFrame(videoFile, safeFrameIndex).also { frameCache.put(sourceKey, safeFrameIndex, it) }
+  }
+
+  private fun getDecodedFrame(videoFile: File, frameIndex: Int, fallbackFrameBytes: ByteArray): BufferedImage {
+    val key = "${videoFile.absolutePath}_$frameIndex"
+    decodedImageCache[key]?.let { return it }
+
+    val frameBytes = try {
+      getFrame(videoFile, frameIndex)
+    } catch (e: Exception) {
+      fallbackFrameBytes
+    }
+
+    val img = ImageIO.read(ByteArrayInputStream(frameBytes))
+      ?: ImageIO.read(ByteArrayInputStream(fallbackFrameBytes))
+
+    if (img != null) {
+      decodedImageCache[key] = img
+    }
+    return img
   }
 
   private fun extractSingleFrame(videoFile: File, frameIndex: Int): ByteArray {
@@ -458,79 +768,90 @@ class MemoryVideoRenderer(private val fps: Int = 60, maxCacheMb: Int = 512) {
   }
 
   fun renderVideo(
-    timeline: List<TimelineEvent>,
+    videoTimeline: List<VideoNotesSegment>,
     frameSources: Map<String, File>,
     masterAudioWav: File,
     outputMp4: File
   ) {
-    require(timeline.isNotEmpty()) { "Cannot render video from an empty timeline." }
+    require(videoTimeline.isNotEmpty()) { "Cannot render video from an empty timeline." }
     require(masterAudioWav.exists()) { "Master audio file not found: ${masterAudioWav.absolutePath}" }
 
-    val totalMs = timeline.maxOf { it.start + it.duration }
+    val totalMs = videoTimeline.maxOf { it.start + it.duration }
     val frameDurationMs = 1000.0 / fps
     val totalFrames = ceil(totalMs / frameDurationMs).toInt()
     require(totalFrames > 0) { "Timeline does not contain any renderable frames." }
 
     val fallbackSource = frameSources[PAUSE_KEY] ?: frameSources.values.firstOrNull()
     ?: error("No video sample is available for rendering.")
-    val fallbackFrame = getFrame(fallbackSource, 0)
+    val fallbackFrameBytes = getFrame(fallbackSource, 0)
 
+    // Mudança importante: alterado para rawvideo rgb24 eliminando o overhead de encoder MJPEG via Java
     val process = ProcessBuilder(
       "ffmpeg",
       "-y",
-      "-f",
-      "image2pipe",
-      "-vcodec",
-      "mjpeg",
-      "-r",
-      fps.toString(),
-      "-i",
-      "pipe:0",
-      "-i",
-      masterAudioWav.absolutePath,
-      "-c:v",
-      "libx264",
-      "-preset",
-      "fast",
-      "-pix_fmt",
-      "yuv420p",
-      "-c:a",
-      "aac",
-      "-b:a",
-      "192k",
+      "-f", "rawvideo",
+      "-pixel_format", "rgb24",
+      "-video_size", "1280x720",
+      "-framerate", fps.toString(),
+      "-i", "pipe:0",
+      "-i", masterAudioWav.absolutePath,
+      "-c:v", "libx264",
+      "-preset", "fast",
+      "-pix_fmt", "yuv420p",
+      "-c:a", "aac",
+      "-b:a", "192k",
       "-shortest",
       outputMp4.absolutePath
     ).redirectError(ProcessBuilder.Redirect.INHERIT).start()
 
-    println("[VIDEO] Streaming $totalFrames frames..."); println("[FRAME CACHE] Initial: ${frameCache.stats()}")
+    println("[VIDEO] Streaming $totalFrames frames via raw RGB24 pipeline..."); println("[FRAME CACHE] Initial: ${frameCache.stats()}")
 
     var activeIndex = 0
+    var lastLoggedLayout: GridLayout? = null
+
+    // REUSO DE RECURSOS DE CANVAS (Alocados 1 única vez fora do loop)
+    val compositeCanvas = BufferedImage(1280, 720, BufferedImage.TYPE_INT_RGB)
+    val g2d = compositeCanvas.createGraphics()
+    g2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR)
+
+    // Buffer de bytes reaproveitável para escrita de pixel RGB24
+    val rgbBuffer = ByteArray(1280 * 720 * 3)
+    val pixelData = (compositeCanvas.raster.dataBuffer as DataBufferInt).data
 
     process.outputStream.use { pipeOut ->
       for (frameIdx in 0 until totalFrames) {
         val timeMs = (frameIdx * frameDurationMs).toLong()
 
-        while (activeIndex < timeline.size && timeMs >= timeline[activeIndex].start + timeline[activeIndex].duration) activeIndex++
-
-        val activeEvent =
-          timeline.getOrNull(activeIndex)?.takeIf { timeMs >= it.start && timeMs < it.start + it.duration }
-
-        val frameBytes = when {
-          activeEvent == null -> fallbackFrame
-          else -> {
-            val source = frameSources[activeEvent.sampleKey()]
-            if (source == null) fallbackFrame else {
-              val sampleFrameIdx = ((timeMs - activeEvent.start) * fps / 1000.0).toInt()
-              try {
-                getFrame(source, sampleFrameIdx)
-              } catch (e: Exception) {
-                println(); println("[WARNING] Failed to obtain frame $sampleFrameIdx from ${source.name}: ${e.message}"); fallbackFrame
-              }
-            }
-          }
+        while (activeIndex < videoTimeline.size && timeMs >= videoTimeline[activeIndex].start + videoTimeline[activeIndex].duration) {
+          activeIndex++
         }
 
-        pipeOut.write(frameBytes)
+        val activeSegment =
+          videoTimeline.getOrNull(activeIndex)?.takeIf { timeMs >= it.start && timeMs < it.start + it.duration }
+        val activeNotes = activeSegment?.notes ?: emptyList()
+        val layout = GridLayout.forNoteCount(activeNotes.size)
+
+        if (layout != lastLoggedLayout) {
+          println("[VIDEO] Grid layout changed to ${layout.cols}x${layout.rows} (${activeNotes.size} active notes)")
+          lastLoggedLayout = layout
+        }
+
+        // Desenha diretamente no BufferedImage reusado
+        renderToCompositeCanvas(
+          g2d = g2d,
+          activeNotes = activeNotes,
+          layout = layout,
+          timeMs = timeMs,
+          frameSources = frameSources,
+          fallbackSource = fallbackSource,
+          fallbackFrameBytes = fallbackFrameBytes
+        )
+
+        // Converter os dados de pixels INT_RGB para o buffer RGB24 de bytes para o Pipe sem alocar nova memória
+        convertIntRgbToRgb24Buffer(pixelData, rgbBuffer)
+
+        // Envia os pixels brutos diretamente para o Pipe do FFmpeg
+        pipeOut.write(rgbBuffer)
 
         if (frameIdx > 0 && frameIdx % 1000 == 0) {
           println(); println("[VIDEO] Frame $frameIdx / $totalFrames")
@@ -540,8 +861,79 @@ class MemoryVideoRenderer(private val fps: Int = 60, maxCacheMb: Int = 512) {
       pipeOut.flush()
     }
 
+    g2d.dispose()
     check(process.waitFor() == 0) { "FFmpeg video encoding failed." }
     println(); println("[FRAME CACHE] Final: ${frameCache.stats()}")
+  }
+
+  private fun renderToCompositeCanvas(
+    g2d: java.awt.Graphics2D,
+    activeNotes: List<NoteEvent>,
+    layout: GridLayout,
+    timeMs: Long,
+    frameSources: Map<String, File>,
+    fallbackSource: File,
+    fallbackFrameBytes: ByteArray
+  ) {
+    // 1. Limpa o canvas único
+    g2d.color = Color.BLACK
+    g2d.fillRect(0, 0, 1280, 720)
+
+    if (activeNotes.isEmpty()) {
+      val img = getDecodedFrame(fallbackSource, 0, fallbackFrameBytes)
+      g2d.drawImage(img, 0, 0, 1280, 720, null)
+      return
+    }
+
+    val cellWidth = 1280 / layout.cols
+    val cellHeight = 720 / layout.rows
+
+    for (i in activeNotes.indices) {
+      val note = activeNotes[i]
+      val col = i % layout.cols
+      val row = i / layout.cols
+
+      val cellX = col * cellWidth
+      val cellY = row * cellHeight
+
+      val source = frameSources[note.note] ?: fallbackSource
+      val sampleFrameIdx = ((timeMs - note.start) * fps / 1000.0).toInt().coerceAtLeast(0)
+
+      val img = getDecodedFrame(source, sampleFrameIdx, fallbackFrameBytes)
+
+      val imgWidth = img.width
+      val imgHeight = img.height
+      val imgAspect = imgWidth.toDouble() / imgHeight
+      val cellAspect = cellWidth.toDouble() / cellHeight
+
+      var drawWidth = cellWidth
+      var drawHeight = cellHeight
+
+      if (imgAspect > cellAspect) {
+        drawHeight = (cellWidth / imgAspect).toInt()
+      } else {
+        drawWidth = (cellHeight * imgAspect).toInt()
+      }
+
+      val drawX = cellX + (cellWidth - drawWidth) / 2
+      val drawY = cellY + (cellHeight - drawHeight) / 2
+
+      g2d.drawImage(img, drawX, drawY, drawWidth, drawHeight, null)
+    }
+  }
+
+  private fun convertIntRgbToRgb24Buffer(srcPixels: IntArray, dstBuffer: ByteArray) {
+    var srcIdx = 0
+    var dstIdx = 0
+    val totalPixels = srcPixels.size
+    while (srcIdx < totalPixels) {
+      val pixel = srcPixels[srcIdx]
+      dstBuffer[dstIdx] = (pixel shr 16 and 0xFF).toByte()     // R
+      dstBuffer[dstIdx + 1] = (pixel shr 8 and 0xFF).toByte()  // G
+      dstBuffer[dstIdx + 2] = (pixel and 0xFF).toByte()        // B
+      srcIdx++
+      dstIdx += 3
+    }
   }
 }
 
@@ -577,6 +969,7 @@ class PipelineContext(val config: SamplerConfig) {
   val frameSources = mutableMapOf<String, File>()
   var notes: List<NoteEvent> = emptyList()
   var timeline: List<TimelineEvent> = emptyList()
+  var videoTimeline: List<VideoNotesSegment> = emptyList()
   var uniqueNotes: Set<String> = emptySet()
 }
 
@@ -599,9 +992,13 @@ class SamplerPipeline(private val config: SamplerConfig = SamplerConfig()) {
     println("[1/5] Reading MIDI...")
     context.notes = MidiEventReader().read(context.config.midiFile)
     context.timeline = MidiTimeline().create(context.notes)
-    context.uniqueNotes = context.timeline.filterIsInstance<TimelineNote>().map { it.event.note }.toSet()
+    context.videoTimeline = VideoTimeline().create(context.notes)
+    context.uniqueNotes = context.notes.map { it.note }.toSet()
+
+    val maxSimultaneous = context.videoTimeline.maxOfOrNull { it.notes.size } ?: 0
     println("[MIDI] Found ${context.notes.size} notes using ${context.uniqueNotes.size} unique pitches.")
-    println("[MIDI] Timeline events: ${context.timeline.size}")
+    println("[MIDI] Audio timeline events: ${context.timeline.size}")
+    println("[VIDEO] Video timeline created with ${context.videoTimeline.size} segments (max simultaneous notes: $maxSimultaneous).")
   }
 
   private fun initEnginesStep(context: PipelineContext) {
@@ -660,7 +1057,7 @@ class SamplerPipeline(private val config: SamplerConfig = SamplerConfig()) {
     println("[CONFIG] Video FPS: ${context.config.videoFps}")
     Profiler.measure("Rendering and encoding final MP4") {
       context.videoRenderer.renderVideo(
-        timeline = context.timeline,
+        videoTimeline = context.videoTimeline,
         frameSources = context.frameSources,
         masterAudioWav = context.masterWav,
         outputMp4 = context.config.outputFile
