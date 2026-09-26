@@ -16,198 +16,79 @@ import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.cos
 
-// ============================================================================
-// PROFILER
-// ============================================================================
-
-/**
- * Small utility used to measure execution time and JVM memory consumption
- * during the rendering pipeline.
- *
- * The profiler is intentionally simple and has no effect on the rendering
- * architecture itself.
- */
 object Profiler {
-
-  /**
-   * Prints the current JVM heap usage.
-   *
-   * @param tag descriptive label identifying the current operation.
-   */
   fun logMemory(tag: String) {
     val runtime = Runtime.getRuntime()
-    val usedMb =
-      (runtime.totalMemory() - runtime.freeMemory()) / (1024 * 1024)
+    val usedMb = (runtime.totalMemory() - runtime.freeMemory()) / (1024 * 1024)
     val maxMb = runtime.maxMemory() / (1024 * 1024)
-
     println("[PROFILER] Memory — $tag: $usedMb MB used / $maxMb MB JVM maximum")
   }
 
-  /**
-   * Measures the execution time and memory usage of an operation.
-   *
-   * @param tag descriptive label for the operation.
-   * @param block operation to execute.
-   * @return the value returned by [block].
-   */
   inline fun <T> measure(tag: String, block: () -> T): T {
-    println()
-    println("[PROFILER] Starting: $tag")
-    logMemory("Before $tag")
-
-    val start = System.currentTimeMillis()
-    val result = block()
+    println(); println("[PROFILER] Starting: $tag"); logMemory("Before $tag")
+    val start = System.currentTimeMillis();
+    val result = block();
     val elapsed = System.currentTimeMillis() - start
-
-    logMemory("After $tag")
-    println("[PROFILER] Completed: $tag in $elapsed ms (${elapsed / 1000.0}s)")
-
+    logMemory("After $tag"); println("[PROFILER] Completed: $tag in $elapsed ms (${elapsed / 1000.0}s)")
     return result
   }
 }
 
-// ============================================================================
-// DOMAIN MODELS AND MIDI PARSING
-// ============================================================================
+data class NoteEvent(val note: String, val velocity: Int, val start: Long, val duration: Long)
 
-/**
- * Represents a MIDI note after being converted from MIDI ticks into
- * milliseconds.
- *
- * @property note musical note name, such as `C4` or `F#3`.
- * @property velocity MIDI velocity associated with the note-on event.
- * @property start note start position in milliseconds.
- * @property duration note duration in milliseconds.
- */
-data class NoteEvent(
-  val note: String,
-  val velocity: Int,
-  val start: Long,
-  val duration: Long
-)
-
-/**
- * Reads MIDI files and converts note events into time-based [NoteEvent]
- * objects.
- *
- * The reader handles:
- *
- * - multiple MIDI tracks;
- * - delta-time accumulation;
- * - note-on events;
- * - note-off events;
- * - note-on events with velocity zero;
- * - tempo changes;
- * - conversion from MIDI ticks to milliseconds.
- */
 class MidiEventReader {
-
-  /**
-   * Reads all playable note events from a MIDI file.
-   *
-   * @param file MIDI input file.
-   * @return note events sorted by their start time.
-   */
   fun read(file: File): List<NoteEvent> {
-    require(file.exists()) {
-      "MIDI file not found: ${file.absolutePath}"
-    }
-
+    require(file.exists()) { "MIDI file not found: ${file.absolutePath}" }
     val midi = MidiReader.fromFile(file.path)
-
-    require(midi.division > 0) {
-      "Invalid MIDI time division: ${midi.division}"
-    }
-
+    require(midi.division > 0) { "Invalid MIDI time division: ${midi.division}" }
     val events = buildList {
       for (track in midi.tracks) {
         var tick = 0L
-
         for (event in track) {
-          tick += event.deltaTime
-          add(TimedEvent(tick, event))
+          tick += event.deltaTime; add(TimedEvent(tick, event))
         }
       }
     }.sortedBy { it.tick }
-
     val tempos = buildList {
-      for (event in events) {
-        if (event.event is SetTempoMetaEvent) {
-          add(
-            TempoEvent(
-              tick = event.tick,
-              tempo = event.event.tempo
-            )
-          )
-        }
-      }
+      for (event in events) if (event.event is SetTempoMetaEvent) add(
+        TempoEvent(
+          tick = event.tick,
+          tempo = event.event.tempo
+        )
+      )
     }.toMutableList()
-
-    /*
-     * MIDI files commonly start with 500,000 microseconds per quarter
-     * note (120 BPM). If the file does not explicitly define a tempo
-     * at tick zero, use that standard default.
-     */
-    if (tempos.none { it.tick == 0L }) {
-      tempos += TempoEvent(0L, DEFAULT_TEMPO)
-    }
-
+    if (tempos.none { it.tick == 0L }) tempos += TempoEvent(0L, DEFAULT_TEMPO)
     tempos.sortBy { it.tick }
-
-    /*
-     * Multiple overlapping instances of the same note/channel are
-     * supported by keeping a queue of active note starts.
-     */
-    val activeNotes =
-      mutableMapOf<Pair<Int, Int>, MutableList<StartedNote>>()
-
+    val activeNotes = mutableMapOf<Pair<Int, Int>, MutableList<StartedNote>>()
     val result = mutableListOf<NoteEvent>()
-
     for (timedEvent in events) {
       when (val event = timedEvent.event) {
-        is NoteOnControlEvent -> {
-          if (event.velocity == 0) {
-            finishNote(
-              channel = event.channel,
-              note = event.note,
-              endTick = timedEvent.tick,
-              activeNotes = activeNotes,
-              tempos = tempos,
-              division = midi.division,
-              result = result
-            )
-          } else {
-            activeNotes
-              .getOrPut(event.channel to event.note, ::mutableListOf)
-              .add(
-                StartedNote(
-                  tick = timedEvent.tick,
-                  velocity = event.velocity
-                )
-              )
-          }
-        }
+        is NoteOnControlEvent -> if (event.velocity == 0) finishNote(
+          event.channel,
+          event.note,
+          timedEvent.tick,
+          activeNotes,
+          tempos,
+          midi.division,
+          result
+        )
+        else activeNotes.getOrPut(event.channel to event.note, ::mutableListOf)
+          .add(StartedNote(timedEvent.tick, event.velocity))
 
-        is NoteOffControlEvent -> {
-          finishNote(
-            channel = event.channel,
-            note = event.note,
-            endTick = timedEvent.tick,
-            activeNotes = activeNotes,
-            tempos = tempos,
-            division = midi.division,
-            result = result
-          )
-        }
+        is NoteOffControlEvent -> finishNote(
+          event.channel,
+          event.note,
+          timedEvent.tick,
+          activeNotes,
+          tempos,
+          midi.division,
+          result
+        )
       }
     }
-
     return result.sortedBy { it.start }
   }
 
-  /**
-   * Closes the oldest active instance of a MIDI note.
-   */
   private fun finishNote(
     channel: Int,
     note: Int,
@@ -217,414 +98,162 @@ class MidiEventReader {
     division: Int,
     result: MutableList<NoteEvent>
   ) {
-    val key = channel to note
+    val key = channel to note;
     val notes = activeNotes[key] ?: return
     if (notes.isEmpty()) return
-
     val started = notes.removeAt(0)
-    val start = ticksToMillis(started.tick, tempos, division)
+    val start = ticksToMillis(started.tick, tempos, division);
     val end = ticksToMillis(endTick, tempos, division)
-
     result += NoteEvent(
       note = midiNoteName(note),
       velocity = started.velocity,
       start = start,
       duration = (end - start).coerceAtLeast(0L)
     )
-
-    if (notes.isEmpty()) {
-      activeNotes.remove(key)
-    }
+    if (notes.isEmpty()) activeNotes.remove(key)
   }
 
-  /**
-   * Converts a MIDI tick position into milliseconds while accounting for
-   * all tempo changes occurring before the target position.
-   */
-  private fun ticksToMillis(
-    targetTick: Long,
-    tempos: List<TempoEvent>,
-    division: Int
-  ): Long {
-    var currentTick = 0L
-    var tempo = DEFAULT_TEMPO.toLong()
+  private fun ticksToMillis(targetTick: Long, tempos: List<TempoEvent>, division: Int): Long {
+    var currentTick = 0L;
+    var tempo = DEFAULT_TEMPO.toLong();
     var microseconds = 0L
-
     for (change in tempos) {
       if (change.tick > targetTick) break
-
       microseconds += (change.tick - currentTick) * tempo / division
-
-      currentTick = change.tick
-      tempo = change.tempo.toLong()
+      currentTick = change.tick; tempo = change.tempo.toLong()
     }
-
     microseconds += (targetTick - currentTick) * tempo / division
-
     return microseconds / 1_000L
   }
 
-  /**
-   * Converts a MIDI note number to scientific pitch notation.
-   *
-   * For example:
-   *
-   * `60 -> C4`
-   * `61 -> C#4`
-   */
-  private fun midiNoteName(note: Int): String =
-    MIDI_NOTE_NAMES[note % 12] + (note / 12 - 1)
+  private fun midiNoteName(note: Int): String = MIDI_NOTE_NAMES[note % 12] + (note / 12 - 1)
 
-  private data class TimedEvent(
-    val tick: Long,
-    val event: Event
-  )
-
-  private data class TempoEvent(
-    val tick: Long,
-    val tempo: Int
-  )
-
-  private data class StartedNote(
-    val tick: Long,
-    val velocity: Int
-  )
+  private data class TimedEvent(val tick: Long, val event: Event)
+  private data class TempoEvent(val tick: Long, val tempo: Int)
+  private data class StartedNote(val tick: Long, val velocity: Int)
 
   companion object {
     private const val DEFAULT_TEMPO = 500_000
-
-    private val MIDI_NOTE_NAMES = arrayOf(
-      "C", "C#", "D", "D#", "E", "F",
-      "F#", "G", "G#", "A", "A#", "B"
-    )
+    private val MIDI_NOTE_NAMES = arrayOf("C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B")
   }
 }
 
-// ============================================================================
-// TIMELINE
-// ============================================================================
-
-/**
- * Common interface for all events occupying time in the rendered output.
- */
 sealed interface TimelineEvent {
-  /**
-   * Event start position in milliseconds.
-   */
   val start: Long
-
-  /**
-   * Event duration in milliseconds.
-   */
   val duration: Long
 }
 
-/**
- * Timeline representation of a musical note.
- */
-data class TimelineNote(
-  val event: NoteEvent
-) : TimelineEvent {
+data class TimelineNote(val event: NoteEvent) : TimelineEvent {
   override val start = event.start
   override val duration = event.duration
 }
 
-/**
- * Timeline representation of a silent or pause interval.
- */
-data class TimelinePause(
-  val durationMs: Long,
-  override val start: Long
-) : TimelineEvent {
+data class TimelinePause(val durationMs: Long, override val start: Long) : TimelineEvent {
   override val duration = durationMs
 }
 
-/**
- * Converts MIDI note events into a continuous rendering timeline.
- *
- * Explicit pause events are inserted wherever there is no active note.
- *
- * Overlapping notes are preserved and are therefore not converted into
- * additional pauses.
- */
 class MidiTimeline {
-
-  /**
-   * Creates the timeline used by both the audio synthesizer and video
-   * renderer.
-   *
-   * @param notes MIDI note events.
-   * @return ordered timeline containing notes and pauses.
-   */
   fun create(notes: List<NoteEvent>): List<TimelineEvent> {
     if (notes.isEmpty()) return emptyList()
-
     val timeline = mutableListOf<TimelineEvent>()
     var position = 0L
-
     for (note in notes.sortedBy { it.start }) {
-      if (note.start > position) {
-        timeline += TimelinePause(
-          durationMs = note.start - position,
-          start = position
-        )
-      }
-
-      timeline += TimelineNote(note)
-      position = maxOf(position, note.start + note.duration)
+      if (note.start > position) timeline += TimelinePause(durationMs = note.start - position, start = position)
+      timeline += TimelineNote(note); position = maxOf(position, note.start + note.duration)
     }
-
     return timeline
   }
 }
 
-// ============================================================================
-// AUDIO SYNTHESIS
-// ============================================================================
+class AudioSample(val left: FloatArray, val right: FloatArray)
 
-/**
- * Stereo floating-point PCM audio sample.
- *
- * Each element represents one sample frame, with the corresponding left
- * and right channel values stored separately.
- */
-class AudioSample(
-  val left: FloatArray,
-  val right: FloatArray
-)
-
-/**
- * Synthesizes the audio track by combining the audio extracted from the
- * individual video samples.
- *
- * The complete master audio is never kept in RAM. Instead, the master is
- * processed in configurable chunks.
- *
- * Audio synthesis uses two passes:
- *
- * 1. Render every chunk to determine the global peak.
- * 2. Render every chunk again while applying the normalization scale and
- *    writing the final WAV file directly to disk.
- *
- * Individual instrument samples remain in memory because they are reused
- * throughout the synthesis process.
- */
-class AudioSynthesizer(
-  private val sampleRate: Int = 48_000,
-  private val chunkDurationSeconds: Int = 10
-) {
-  /**
-   * Fade-out duration applied after the requested note duration.
-   *
-   * This prevents abrupt sample termination and reduces audible clicks.
-   */
+class AudioSynthesizer(private val sampleRate: Int = 48_000, private val chunkDurationSeconds: Int = 10) {
   private val fadeDurationMs = 15.0
 
   init {
-    require(sampleRate > 0) {
-      "Sample rate must be greater than zero."
-    }
-    require(chunkDurationSeconds > 0) {
-      "Audio chunk duration must be greater than zero."
-    }
+    require(sampleRate > 0) { "Sample rate must be greater than zero." }
+    require(chunkDurationSeconds > 0) { "Audio chunk duration must be greater than zero." }
   }
 
-  /**
-   * Extracts the audio stream from a video file and converts it into
-   * stereo Float32 PCM.
-   *
-   * @param videoFile source video.
-   * @param tempWav temporary WAV file used during extraction.
-   */
-  fun extractSamplePcm(
-    videoFile: File,
-    tempWav: File
-  ): AudioSample {
-    require(videoFile.exists()) {
-      "Sample video not found: ${videoFile.absolutePath}"
-    }
-
+  fun extractSamplePcm(videoFile: File, tempWav: File): AudioSample {
+    require(videoFile.exists()) { "Sample video not found: ${videoFile.absolutePath}" }
     runFfmpeg(
       "-y",
-      "-i", videoFile.absolutePath,
+      "-i",
+      videoFile.absolutePath,
       "-vn",
-      "-ar", sampleRate.toString(),
-      "-ac", "2",
-      "-c:a", "pcm_s16le",
+      "-ar",
+      sampleRate.toString(),
+      "-ac",
+      "2",
+      "-c:a",
+      "pcm_s16le",
       tempWav.absolutePath
     )
-
     val bytes = tempWav.readBytes()
     if (bytes.size < 44) return emptyAudioSample()
-
-    /*
-     * WAV files may contain chunks before the actual PCM data.
-     * Search for the "data" chunk rather than assuming a fixed offset.
-     */
     val dataOffset = findDataChunk(bytes)
     if (dataOffset >= bytes.size) return emptyAudioSample()
-
     val pcmBytes = bytes.copyOfRange(dataOffset, bytes.size)
     val totalSamples = pcmBytes.size / 4
-
-    val left = FloatArray(totalSamples)
+    val left = FloatArray(totalSamples);
     val right = FloatArray(totalSamples)
-
-    ByteBuffer
-      .wrap(pcmBytes)
-      .order(ByteOrder.LITTLE_ENDIAN)
-      .also { buffer ->
-        repeat(totalSamples) { i ->
-          left[i] = buffer.short / 32768.0f
-          right[i] = buffer.short / 32768.0f
-        }
-      }
-
+    ByteBuffer.wrap(pcmBytes).order(ByteOrder.LITTLE_ENDIAN).also { buffer ->
+      repeat(totalSamples) { i -> left[i] = buffer.short / 32768.0f; right[i] = buffer.short / 32768.0f }
+    }
     return AudioSample(left, right)
   }
 
-  /**
-   * Synthesizes the complete master audio track.
-   *
-   * Memory usage is bounded by the configured chunk size rather than
-   * the total duration of the MIDI composition.
-   *
-   * @param timeline rendering timeline.
-   * @param samples audio samples indexed by logical sample name.
-   * @param outputFile destination WAV file.
-   */
-  fun synthesize(
-    timeline: List<TimelineEvent>,
-    samples: Map<String, AudioSample>,
-    outputFile: File
-  ) {
-    require(timeline.isNotEmpty()) {
-      "Cannot synthesize audio from an empty timeline."
-    }
-
+  fun synthesize(timeline: List<TimelineEvent>, samples: Map<String, AudioSample>, outputFile: File) {
+    require(timeline.isNotEmpty()) { "Cannot synthesize audio from an empty timeline." }
     val totalMs = timeline.maxOf { it.start + it.duration }
     val totalSamplesLong = (totalMs + 1_000L) * sampleRate / 1_000L
-
-    require(totalSamplesLong <= Int.MAX_VALUE) {
-      "Audio is too long for the current buffer implementation: $totalSamplesLong samples."
-    }
-
+    require(totalSamplesLong <= Int.MAX_VALUE) { "Audio is too long for the current buffer implementation: $totalSamplesLong samples." }
     val totalSamples = totalSamplesLong.toInt()
     val chunkSamples =
-      (chunkDurationSeconds.toLong() * sampleRate)
-        .coerceAtMost(totalSamples.toLong())
-        .coerceAtLeast(1L)
-        .toInt()
+      (chunkDurationSeconds.toLong() * sampleRate).coerceAtMost(totalSamples.toLong()).coerceAtLeast(1L).toInt()
 
-    println("[AUDIO] Master duration: ${totalMs / 1000.0}s")
-    println("[AUDIO] Total samples: $totalSamples")
-    println("[AUDIO] Chunk duration: $chunkDurationSeconds s")
-    println("[AUDIO] Samples per chunk: $chunkSamples")
+    println("[AUDIO] Master duration: ${totalMs / 1000.0}s"); println("[AUDIO] Total samples: $totalSamples")
+    println("[AUDIO] Chunk duration: $chunkDurationSeconds s"); println("[AUDIO] Samples per chunk: $chunkSamples")
 
-    val masterL = FloatArray(chunkSamples)
+    val masterL = FloatArray(chunkSamples);
     val masterR = FloatArray(chunkSamples)
     val totalChunks = (totalSamples + chunkSamples - 1) / chunkSamples
 
-    // --------------------------------------------------------------------
-    // PASS 1 — FIND GLOBAL PEAK
-    // --------------------------------------------------------------------
-
-    println()
-    println("[AUDIO] Pass 1/2: calculating global peak...")
-
-    var maxPeak = 0.0f
-    var chunkStart = 0
+    println(); println("[AUDIO] Pass 1/2: calculating global peak...")
+    var maxPeak = 0.0f;
+    var chunkStart = 0;
     var chunkNumber = 0
 
     while (chunkStart < totalSamples) {
       val count = minOf(chunkSamples, totalSamples - chunkStart)
-
       clearBuffers(masterL, masterR, count)
-
-      mixChunk(
-        timeline,
-        samples,
-        masterL,
-        masterR,
-        chunkStart,
-        count
-      )
-
-      repeat(count) { i ->
-        maxPeak = maxOf(
-          maxPeak,
-          abs(masterL[i]),
-          abs(masterR[i])
-        )
-      }
-
+      mixChunk(timeline, samples, masterL, masterR, chunkStart, count)
+      repeat(count) { i -> maxPeak = maxOf(maxPeak, abs(masterL[i]), abs(masterR[i])) }
       println("[AUDIO] Peak analysis — chunk ${++chunkNumber}/$totalChunks")
       chunkStart += count
     }
 
-    val scale =
-      if (maxPeak > NORMALIZATION_PEAK) {
-        NORMALIZATION_PEAK / maxPeak
-      } else {
-        1.0f
-      }
+    val scale = if (maxPeak > NORMALIZATION_PEAK) NORMALIZATION_PEAK / maxPeak else 1.0f
+    println("[AUDIO] Global peak: $maxPeak"); println("[AUDIO] Normalization scale: $scale")
 
-    println("[AUDIO] Global peak: $maxPeak")
-    println("[AUDIO] Normalization scale: $scale")
-
-    // --------------------------------------------------------------------
-    // PASS 2 — RENDER NORMALIZED WAV
-    // --------------------------------------------------------------------
-
-    println()
-    println("[AUDIO] Pass 2/2: writing normalized WAV...")
-
+    println(); println("[AUDIO] Pass 2/2: writing normalized WAV...")
     writeWavStreaming(outputFile, totalSamples, sampleRate) { out ->
-      var processedSamples = 0
+      var processedSamples = 0;
       var currentChunk = 0
-
       while (processedSamples < totalSamples) {
-        val count = minOf(
-          chunkSamples,
-          totalSamples - processedSamples
-        )
-
+        val count = minOf(chunkSamples, totalSamples - processedSamples)
         clearBuffers(masterL, masterR, count)
-
-        mixChunk(
-          timeline,
-          samples,
-          masterL,
-          masterR,
-          processedSamples,
-          count
-        )
-
-        writeChunkAsPcm16(
-          out,
-          masterL,
-          masterR,
-          count,
-          scale
-        )
-
-        println(
-          "[AUDIO] WAV writing — " +
-              "chunk ${++currentChunk}/$totalChunks"
-        )
-
+        mixChunk(timeline, samples, masterL, masterR, processedSamples, count)
+        writeChunkAsPcm16(out, masterL, masterR, count, scale)
+        println("[AUDIO] WAV writing — chunk ${++currentChunk}/$totalChunks")
         processedSamples += count
       }
     }
 
-    println("[AUDIO] Audio synthesis completed.")
-    println("[AUDIO] Output: ${outputFile.absolutePath}")
+    println("[AUDIO] Audio synthesis completed."); println("[AUDIO] Output: ${outputFile.absolutePath}")
   }
 
-  /**
-   * Mixes only the portion of the timeline that intersects the current
-   * audio chunk.
-   */
   private fun mixChunk(
     timeline: List<TimelineEvent>,
     samples: Map<String, AudioSample>,
@@ -633,58 +262,28 @@ class AudioSynthesizer(
     chunkStartSample: Int,
     chunkSampleCount: Int
   ) {
-    val fadeSamples =
-      (fadeDurationMs * sampleRate / 1000.0).toInt()
-
+    val fadeSamples = (fadeDurationMs * sampleRate / 1000.0).toInt()
     val chunkEnd = chunkStartSample + chunkSampleCount
 
     for (event in timeline) {
-      val key = event.sampleKey()
+      val key = event.sampleKey();
       val sample = samples[key] ?: continue
-
-      val startSample =
-        (event.start * sampleRate / 1000.0).toInt()
-
-      val durationSamples =
-        (event.duration * sampleRate / 1000.0).toInt()
-
-      /*
-       * The sample is allowed to continue for the fade duration
-       * beyond the requested event duration.
-       */
-      val maxCopy = minOf(
-        sample.left.size,
-        durationSamples + fadeSamples
-      )
-
+      val startSample = (event.start * sampleRate / 1000.0).toInt()
+      val durationSamples = (event.duration * sampleRate / 1000.0).toInt()
+      val maxCopy = minOf(sample.left.size, durationSamples + fadeSamples)
       if (maxCopy <= 0) continue
-
       val eventEnd = startSample + maxCopy
 
-      /*
-       * Skip events that do not intersect this chunk.
-       */
-      if (
-        eventEnd <= chunkStartSample ||
-        startSample >= chunkEnd
-      ) {
-        continue
-      }
+      if (eventEnd <= chunkStartSample || startSample >= chunkEnd) continue
 
       val sourceStart = maxOf(0, chunkStartSample - startSample)
       val sourceEnd = minOf(maxCopy, chunkEnd - startSample)
 
       for (sourceIndex in sourceStart until sourceEnd) {
-        val gain =
-          if (
-            fadeSamples > 0 &&
-            sourceIndex >= durationSamples
-          ) {
-            val progress = (sourceIndex - durationSamples).toFloat() / fadeSamples
-            ((1.0 + cos(Math.PI * progress)) * 0.5).toFloat()
-          } else {
-            1.0f
-          }
+        val gain = if (fadeSamples > 0 && sourceIndex >= durationSamples) {
+          val progress = (sourceIndex - durationSamples).toFloat() / fadeSamples
+          ((1.0 + cos(Math.PI * progress)) * 0.5).toFloat()
+        } else 1.0f
 
         val targetIndex = startSample + sourceIndex - chunkStartSample
         masterL[targetIndex] += sample.left[sourceIndex] * gain
@@ -693,42 +292,14 @@ class AudioSynthesizer(
     }
   }
 
-  /**
-   * Creates a classic RIFF/WAV PCM16 file and writes its audio payload
-   * incrementally.
-   *
-   * Only the current audio chunk is held in memory.
-   */
-  private fun writeWavStreaming(
-    file: File,
-    totalSamples: Int,
-    sampleRate: Int,
-    block: (BufferedOutputStream) -> Unit
-  ) {
-    val totalDataLen = totalSamples.toLong() * 4
+  private fun writeWavStreaming(file: File, totalSamples: Int, sampleRate: Int, block: (BufferedOutputStream) -> Unit) {
+    val totalDataLen = totalSamples.toLong() * 4;
     val totalSize = totalDataLen + 36
-
-    require(totalDataLen <= 0xFFFFFFFFL) {
-      "WAV file is too large for classic RIFF PCM."
-    }
-
-    file.outputStream().buffered(64 * 1024).use { out ->
-      out.write(
-        createWavHeader(
-          totalDataLen,
-          totalSize,
-          sampleRate
-        )
-      )
-
-      block(out)
-    }
+    require(totalDataLen <= 0xFFFFFFFFL) { "WAV file is too large for classic RIFF PCM." }
+    file.outputStream().buffered(64 * 1024)
+      .use { out -> out.write(createWavHeader(totalDataLen, totalSize, sampleRate)); block(out) }
   }
 
-  /**
-   * Converts one stereo Float32 chunk into interleaved signed PCM16 and
-   * writes it directly to the output stream.
-   */
   private fun writeChunkAsPcm16(
     out: BufferedOutputStream,
     masterL: FloatArray,
@@ -736,223 +307,106 @@ class AudioSynthesizer(
     sampleCount: Int,
     scale: Float
   ) {
-    val buffer = ByteBuffer
-      .allocate(sampleCount * 4)
-      .order(ByteOrder.LITTLE_ENDIAN)
-
-    repeat(sampleCount) { i ->
-      buffer.putShort(toPcm16(masterL[i] * scale))
-      buffer.putShort(toPcm16(masterR[i] * scale))
-    }
-
+    val buffer = ByteBuffer.allocate(sampleCount * 4).order(ByteOrder.LITTLE_ENDIAN)
+    repeat(sampleCount) { i -> buffer.putShort(toPcm16(masterL[i] * scale)); buffer.putShort(toPcm16(masterR[i] * scale)) }
     out.write(buffer.array())
   }
 
-  /**
-   * Creates the 44-byte WAV header for stereo PCM16 audio.
-   */
-  private fun createWavHeader(
-    totalDataLen: Long,
-    totalSize: Long,
-    sampleRate: Int
-  ): ByteArray {
-    val header = ByteArray(44)
+  private fun createWavHeader(totalDataLen: Long, totalSize: Long, sampleRate: Int): ByteArray {
+    val header = ByteArray(44);
     val byteRate = sampleRate.toLong() * 4
-
-    header.writeAscii(0, "RIFF")
-    writeIntLE(header, 4, totalSize)
-    header.writeAscii(8, "WAVE")
-    header.writeAscii(12, "fmt ")
-
-    writeIntLE(header, 16, 16)
-    writeShortLE(header, 20, 1)
-    writeShortLE(header, 22, 2)
-    writeIntLE(header, 24, sampleRate.toLong())
-    writeIntLE(header, 28, byteRate)
-    writeShortLE(header, 32, 4)
-    writeShortLE(header, 34, 16)
-
-    header.writeAscii(36, "data")
-    writeIntLE(header, 40, totalDataLen)
-
+    header.writeAscii(0, "RIFF"); writeIntLE(header, 4, totalSize); header.writeAscii(8, "WAVE"); header.writeAscii(
+      12,
+      "fmt "
+    )
+    writeIntLE(header, 16, 16); writeShortLE(header, 20, 1); writeShortLE(header, 22, 2)
+    writeIntLE(header, 24, sampleRate.toLong()); writeIntLE(header, 28, byteRate)
+    writeShortLE(header, 32, 4); writeShortLE(header, 34, 16)
+    header.writeAscii(36, "data"); writeIntLE(header, 40, totalDataLen)
     return header
   }
 
-  /**
-   * Writes a 32-bit little-endian integer into a byte array.
-   */
-  private fun writeIntLE(
-    array: ByteArray,
-    offset: Int,
-    value: Long
-  ) {
-    repeat(4) {
-      array[offset + it] = (value shr (it * 8)).toByte()
-    }
+  private fun writeIntLE(array: ByteArray, offset: Int, value: Long) {
+    repeat(4) { array[offset + it] = (value shr (it * 8)).toByte() }
   }
 
-  /**
-   * Writes a 16-bit little-endian integer into a byte array.
-   */
-  private fun writeShortLE(
-    array: ByteArray,
-    offset: Int,
-    value: Int
-  ) {
+  private fun writeShortLE(array: ByteArray, offset: Int, value: Int) {
     array[offset] = value.toByte()
     array[offset + 1] = (value shr 8).toByte()
   }
 
-  /**
-   * Executes FFmpeg and fails immediately if the process exits with an
-   * error status.
-   */
   private fun runFfmpeg(vararg arguments: String) {
-    val exitCode = ProcessBuilder(listOf("ffmpeg", "-loglevel", "error") + arguments)
-      .inheritIO()
-      .start()
-      .waitFor()
-
-    check(exitCode == 0) {
-      "FFmpeg audio extraction failed with exit code $exitCode."
-    }
+    val exitCode = ProcessBuilder(listOf("ffmpeg", "-loglevel", "error") + arguments).inheritIO().start().waitFor()
+    check(exitCode == 0) { "FFmpeg audio extraction failed with exit code $exitCode." }
   }
 
   private fun findDataChunk(bytes: ByteArray): Int {
     for (i in 0..bytes.size - 8) {
-      if (
-        bytes[i] == 'd'.code.toByte() &&
-        bytes[i + 1] == 'a'.code.toByte() &&
-        bytes[i + 2] == 't'.code.toByte() &&
-        bytes[i + 3] == 'a'.code.toByte()
-      ) {
-        return i + 8
-      }
+      if (bytes[i] == 'd'.code.toByte() && bytes[i + 1] == 'a'.code.toByte() && bytes[i + 2] == 't'.code.toByte() && bytes[i + 3] == 'a'.code.toByte()) return i + 8
     }
-
     return bytes.size
   }
 
-  private fun emptyAudioSample() =
-    AudioSample(FloatArray(0), FloatArray(0))
+  private fun emptyAudioSample() = AudioSample(FloatArray(0), FloatArray(0))
 
-  private fun clearBuffers(
-    left: FloatArray,
-    right: FloatArray,
-    size: Int
-  ) {
-    Arrays.fill(left, 0, size, 0.0f)
-    Arrays.fill(right, 0, size, 0.0f)
+  private fun clearBuffers(left: FloatArray, right: FloatArray, size: Int) {
+    Arrays.fill(left, 0, size, 0.0f); Arrays.fill(right, 0, size, 0.0f)
   }
 
-  private fun toPcm16(value: Float): Short =
-    (value * 32767.0f).toInt()
-      .coerceIn(-32768, 32767)
-      .toShort()
+  private fun toPcm16(value: Float): Short = (value * 32767.0f).toInt().coerceIn(-32768, 32767).toShort()
 
   private companion object {
     const val NORMALIZATION_PEAK = 0.95f
   }
 }
 
-// ============================================================================
-// CONTROLLED RAM FRAME CACHE
-// ============================================================================
-
-/**
- * Thread-safe LRU cache for JPEG video frames.
- *
- * The cache is limited by total byte size rather than number of entries,
- * because individual JPEG frames may have different sizes.
- *
- * When the configured memory limit is reached, the least recently used
- * frames are evicted automatically.
- */
 class RamFrameCache(maxBytes: Long) {
   private val maxBytes = maxBytes.coerceAtLeast(1)
 
-  private data class CacheKey(
-    val source: String,
-    val frameIndex: Int
-  )
+  private data class CacheKey(val source: String, val frameIndex: Int)
 
-  private val cache =
-    LinkedHashMap<CacheKey, ByteArray>(16, 0.75f, true)
-
-  private var currentBytes = 0L
-  private var hits = 0L
-  private var misses = 0L
+  private val cache = LinkedHashMap<CacheKey, ByteArray>(16, 0.75f, true)
+  private var currentBytes = 0L;
+  private var hits = 0L;
+  private var misses = 0L;
   private var evictions = 0L
 
-  /**
-   * Retrieves a cached frame.
-   *
-   * @return JPEG bytes if the frame is cached, otherwise `null`.
-   */
   @Synchronized
-  fun get(
-    source: String,
-    frameIndex: Int
-  ): ByteArray? {
+  fun get(source: String, frameIndex: Int): ByteArray? {
     val value = cache[CacheKey(source, frameIndex)]
     if (value != null) hits++ else misses++
     return value
   }
 
-  /**
-   * Inserts a frame into the cache.
-   *
-   * Frames larger than the complete cache capacity are ignored rather than
-   * causing an endless eviction cycle.
-   */
   @Synchronized
-  fun put(
-    source: String,
-    frameIndex: Int,
-    value: ByteArray
-  ) {
+  fun put(source: String, frameIndex: Int, value: ByteArray) {
     val valueSize = value.size.toLong()
     if (valueSize > maxBytes) return
-
     val key = CacheKey(source, frameIndex)
     cache.remove(key)?.let { currentBytes -= it.size }
-
-    cache[key] = value
-    currentBytes += valueSize
-
+    cache[key] = value; currentBytes += valueSize
     while (currentBytes > maxBytes) {
-      val iterator = cache.entries.iterator()
+      val iterator = cache.entries.iterator();
       val eldest = iterator.next()
-
-      currentBytes -= eldest.value.size
-      iterator.remove()
-      evictions++
+      currentBytes -= eldest.value.size; iterator.remove(); evictions++
     }
   }
 
-  /**
-   * Returns human-readable cache statistics.
-   */
   @Synchronized
-  fun stats(): String =
-    String.format(
-      Locale.US,
-      "Frames=%d | RAM=%.2f/%.2f MB | Hits=%d | Misses=%d | Evictions=%d",
-      cache.size,
-      currentBytes / MB,
-      maxBytes / MB,
-      hits,
-      misses,
-      evictions
-    )
+  fun stats(): String = String.format(
+    Locale.US,
+    "Frames=%d | RAM=%.2f/%.2f MB | Hits=%d | Misses=%d | Evictions=%d",
+    cache.size,
+    currentBytes / MB,
+    maxBytes / MB,
+    hits,
+    misses,
+    evictions
+  )
 
-  /**
-   * Removes all cached frames and resets the current memory usage.
-   */
   @Synchronized
   fun clear() {
-    cache.clear()
-    currentBytes = 0
+    cache.clear(); currentBytes = 0
   }
 
   private companion object {
@@ -960,171 +414,95 @@ class RamFrameCache(maxBytes: Long) {
   }
 }
 
-// ============================================================================
-// LAZY VIDEO FRAME RENDERER
-// ============================================================================
-
-/**
- * Renders video frames lazily from the individual instrument samples.
- *
- * The renderer never loads complete source videos into memory.
- *
- * For each requested frame:
- *
- * 1. Look for the JPEG in the RAM cache.
- * 2. If absent, ask FFmpeg to extract that frame.
- * 3. Store the resulting JPEG in the LRU cache.
- * 4. Stream the JPEG directly to the final FFmpeg encoder.
- *
- * This allows memory consumption to be controlled independently from the
- * duration of the MIDI composition.
- */
-class MemoryVideoRenderer(
-  private val fps: Int = 60,
-  maxCacheMb: Int = 512
-) {
-  private val frameCache = RamFrameCache(
-    maxBytes = maxCacheMb.toLong() * 1024 * 1024
-  )
+class MemoryVideoRenderer(private val fps: Int = 60, maxCacheMb: Int = 512) {
+  private val frameCache = RamFrameCache(maxBytes = maxCacheMb.toLong() * 1024 * 1024)
 
   init {
-    require(fps > 0) {
-      "Video FPS must be greater than zero."
-    }
-
-    require(maxCacheMb > 0) {
-      "Frame cache size must be greater than zero."
-    }
+    require(fps > 0) { "Video FPS must be greater than zero." }
+    require(maxCacheMb > 0) { "Frame cache size must be greater than zero." }
   }
 
-  /**
-   * Returns a single JPEG frame from a source video, using the RAM cache
-   * whenever possible.
-   */
-  private fun getFrame(
-    videoFile: File,
-    frameIndex: Int
-  ): ByteArray {
+  private fun getFrame(videoFile: File, frameIndex: Int): ByteArray {
     val sourceKey = videoFile.absoluteFile.normalize().path
     val safeFrameIndex = frameIndex.coerceAtLeast(0)
-
-    frameCache.get(sourceKey, safeFrameIndex)?.let {
-      return it
-    }
-
-    return extractSingleFrame(videoFile, safeFrameIndex).also {
-      frameCache.put(sourceKey, safeFrameIndex, it)
-    }
+    frameCache.get(sourceKey, safeFrameIndex)?.let { return it }
+    return extractSingleFrame(videoFile, safeFrameIndex).also { frameCache.put(sourceKey, safeFrameIndex, it) }
   }
 
-  /**
-   * Extracts exactly one video frame as an MJPEG/JPEG byte array.
-   */
-  private fun extractSingleFrame(
-    videoFile: File,
-    frameIndex: Int
-  ): ByteArray {
-    require(videoFile.exists()) {
-      "Video sample not found: ${videoFile.absolutePath}"
-    }
-
-    val timestamp = String.format(
-      Locale.US,
-      "%.6f",
-      frameIndex.toDouble() / fps
-    )
-
+  private fun extractSingleFrame(videoFile: File, frameIndex: Int): ByteArray {
+    require(videoFile.exists()) { "Video sample not found: ${videoFile.absolutePath}" }
+    val timestamp = String.format(Locale.US, "%.6f", frameIndex.toDouble() / fps)
     val process = ProcessBuilder(
       "ffmpeg",
-      "-loglevel", "error",
-      "-ss", timestamp,
-      "-i", videoFile.absolutePath,
-      "-vf", "scale=1280:720,fps=$fps",
-      "-frames:v", "1",
-      "-f", "mjpeg",
-      "-q:v", "3",
+      "-loglevel",
+      "error",
+      "-ss",
+      timestamp,
+      "-i",
+      videoFile.absolutePath,
+      "-vf",
+      "scale=1280:720,fps=$fps",
+      "-frames:v",
+      "1",
+      "-f",
+      "mjpeg",
+      "-q:v",
+      "3",
       "pipe:1"
-    )
-      .redirectError(ProcessBuilder.Redirect.INHERIT)
-      .start()
-
+    ).redirectError(ProcessBuilder.Redirect.INHERIT).start()
     val bytes = process.inputStream.use { it.readBytes() }
     val exitCode = process.waitFor()
-
-    check(exitCode == 0) {
-      "FFmpeg failed to extract frame $frameIndex from ${videoFile.name}."
-    }
-
-    check(bytes.isNotEmpty()) {
-      "FFmpeg returned an empty frame $frameIndex from ${videoFile.name}."
-    }
-
+    check(exitCode == 0) { "FFmpeg failed to extract frame $frameIndex from ${videoFile.name}." }
+    check(bytes.isNotEmpty()) { "FFmpeg returned an empty frame $frameIndex from ${videoFile.name}." }
     return bytes
   }
 
-  /**
-   * Renders the final MP4 by streaming generated JPEG frames and the
-   * synthesized master audio into FFmpeg.
-   *
-   * @param timeline complete rendering timeline.
-   * @param frameSources logical sample names mapped to source videos.
-   * @param masterAudioWav synthesized master audio.
-   * @param outputMp4 final MP4 output file.
-   */
   fun renderVideo(
     timeline: List<TimelineEvent>,
     frameSources: Map<String, File>,
     masterAudioWav: File,
     outputMp4: File
   ) {
-    require(timeline.isNotEmpty()) {
-      "Cannot render video from an empty timeline."
-    }
-
-    require(masterAudioWav.exists()) {
-      "Master audio file not found: ${masterAudioWav.absolutePath}"
-    }
+    require(timeline.isNotEmpty()) { "Cannot render video from an empty timeline." }
+    require(masterAudioWav.exists()) { "Master audio file not found: ${masterAudioWav.absolutePath}" }
 
     val totalMs = timeline.maxOf { it.start + it.duration }
     val frameDurationMs = 1000.0 / fps
     val totalFrames = ceil(totalMs / frameDurationMs).toInt()
+    require(totalFrames > 0) { "Timeline does not contain any renderable frames." }
 
-    require(totalFrames > 0) {
-      "Timeline does not contain any renderable frames."
-    }
-
-    val fallbackSource =
-      frameSources[PAUSE_KEY]
-        ?: frameSources.values.firstOrNull()
-        ?: error("No video sample is available for rendering.")
-
-    /*
-     * Keep one fallback frame available for missing samples or gaps.
-     * This avoids repeatedly invoking FFmpeg when a source is missing.
-     */
+    val fallbackSource = frameSources[PAUSE_KEY] ?: frameSources.values.firstOrNull()
+    ?: error("No video sample is available for rendering.")
     val fallbackFrame = getFrame(fallbackSource, 0)
 
     val process = ProcessBuilder(
       "ffmpeg",
       "-y",
-      "-f", "image2pipe",
-      "-vcodec", "mjpeg",
-      "-r", fps.toString(),
-      "-i", "pipe:0",
-      "-i", masterAudioWav.absolutePath,
-      "-c:v", "libx264",
-      "-preset", "fast",
-      "-pix_fmt", "yuv420p",
-      "-c:a", "aac",
-      "-b:a", "192k",
+      "-f",
+      "image2pipe",
+      "-vcodec",
+      "mjpeg",
+      "-r",
+      fps.toString(),
+      "-i",
+      "pipe:0",
+      "-i",
+      masterAudioWav.absolutePath,
+      "-c:v",
+      "libx264",
+      "-preset",
+      "fast",
+      "-pix_fmt",
+      "yuv420p",
+      "-c:a",
+      "aac",
+      "-b:a",
+      "192k",
       "-shortest",
       outputMp4.absolutePath
-    )
-      .redirectError(ProcessBuilder.Redirect.INHERIT)
-      .start()
+    ).redirectError(ProcessBuilder.Redirect.INHERIT).start()
 
-    println("[VIDEO] Streaming $totalFrames frames...")
-    println("[FRAME CACHE] Initial: ${frameCache.stats()}")
+    println("[VIDEO] Streaming $totalFrames frames..."); println("[FRAME CACHE] Initial: ${frameCache.stats()}")
 
     var activeIndex = 0
 
@@ -1132,49 +510,21 @@ class MemoryVideoRenderer(
       for (frameIdx in 0 until totalFrames) {
         val timeMs = (frameIdx * frameDurationMs).toLong()
 
-        /*
-         * Advance through timeline events that have already ended.
-         *
-         * The timeline is ordered, so each event is visited at most once.
-         */
-        while (
-          activeIndex < timeline.size &&
-          timeMs >= timeline[activeIndex].start +
-          timeline[activeIndex].duration
-        ) {
-          activeIndex++
-        }
+        while (activeIndex < timeline.size && timeMs >= timeline[activeIndex].start + timeline[activeIndex].duration) activeIndex++
 
         val activeEvent =
-          timeline.getOrNull(activeIndex)?.takeIf {
-            timeMs >= it.start &&
-                timeMs < it.start + it.duration
-          }
+          timeline.getOrNull(activeIndex)?.takeIf { timeMs >= it.start && timeMs < it.start + it.duration }
 
         val frameBytes = when {
           activeEvent == null -> fallbackFrame
-
           else -> {
-            val source =
-              frameSources[activeEvent.sampleKey()]
-
-            if (source == null) {
-              fallbackFrame
-            } else {
-              val sampleFrameIdx =
-                ((timeMs - activeEvent.start) * fps / 1000.0)
-                  .toInt()
-
+            val source = frameSources[activeEvent.sampleKey()]
+            if (source == null) fallbackFrame else {
+              val sampleFrameIdx = ((timeMs - activeEvent.start) * fps / 1000.0).toInt()
               try {
                 getFrame(source, sampleFrameIdx)
               } catch (e: Exception) {
-                println()
-                println(
-                  "[WARNING] Failed to obtain frame " +
-                      "$sampleFrameIdx from ${source.name}: " +
-                      e.message
-                )
-                fallbackFrame
+                println(); println("[WARNING] Failed to obtain frame $sampleFrameIdx from ${source.name}: ${e.message}"); fallbackFrame
               }
             }
           }
@@ -1183,44 +533,27 @@ class MemoryVideoRenderer(
         pipeOut.write(frameBytes)
 
         if (frameIdx > 0 && frameIdx % 1000 == 0) {
-          println()
-          println("[VIDEO] Frame $frameIdx / $totalFrames")
-          Profiler.logMemory("Video rendering")
-          println("[FRAME CACHE] ${frameCache.stats()}")
+          println(); println("[VIDEO] Frame $frameIdx / $totalFrames")
+          Profiler.logMemory("Video rendering"); println("[FRAME CACHE] ${frameCache.stats()}")
         }
       }
-
       pipeOut.flush()
     }
 
-    check(process.waitFor() == 0) {
-      "FFmpeg video encoding failed."
-    }
-
-    println()
-    println("[FRAME CACHE] Final: ${frameCache.stats()}")
+    check(process.waitFor() == 0) { "FFmpeg video encoding failed." }
+    println(); println("[FRAME CACHE] Final: ${frameCache.stats()}")
   }
 }
 
-// ============================================================================
-// SHARED HELPERS
-// ============================================================================
-
 private const val PAUSE_KEY = "__pause__"
 
-private fun TimelineEvent.sampleKey(): String =
-  when (this) {
-    is TimelineNote -> event.note
-    is TimelinePause -> PAUSE_KEY
-  }
+private fun TimelineEvent.sampleKey(): String = when (this) {
+  is TimelineNote -> event.note
+  is TimelinePause -> PAUSE_KEY
+}
 
-private fun ByteArray.writeAscii(
-  offset: Int,
-  value: String
-) {
-  value.forEachIndexed { index, char ->
-    this[offset + index] = char.code.toByte()
-  }
+private fun ByteArray.writeAscii(offset: Int, value: String) {
+  value.forEachIndexed { index, char -> this[offset + index] = char.code.toByte() }
 }
 
 // ============================================================================
