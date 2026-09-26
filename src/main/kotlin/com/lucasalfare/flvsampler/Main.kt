@@ -556,190 +556,129 @@ private fun ByteArray.writeAscii(offset: Int, value: String) {
   value.forEachIndexed { index, char -> this[offset + index] = char.code.toByte() }
 }
 
-// ============================================================================
-// APPLICATION ENTRY POINT
-// ============================================================================
+data class SamplerConfig(
+  val frameCacheMaxMb: Int = 512,
+  val audioChunkSeconds: Int = 10,
+  val audioSampleRate: Int = 48_000,
+  val videoFps: Int = 60,
+  val samplesDir: File = File("samples"),
+  val midiFile: File = File("input.mid"),
+  val cacheDir: File = File("render_cache"),
+  val outputFile: File = File("output.mp4")
+)
 
-/**
- * Main application entry point.
- *
- * Expected project structure:
- *
- * ```
- * input.mid
- * samples/
- *     C3.mp4
- *     C#3.mp4
- *     D3.mp4
- *     ...
- *     pause.mp4
- * ```
- *
- * The application performs the following pipeline:
- *
- * 1. Read the MIDI file.
- * 2. Convert MIDI events into a time-based timeline.
- * 3. Extract audio from the required video samples.
- * 4. Synthesize and normalize the master audio.
- * 5. Render video frames lazily using the configured RAM cache.
- * 6. Combine the streamed video and master audio into the final MP4.
- * 7. Remove temporary rendering files.
- */
-
-private const val FRAME_CACHE_MAX_MB = 512
-private const val AUDIO_CHUNK_SECONDS = 10
-private const val AUDIO_SAMPLE_RATE = 48_000
-private const val VIDEO_FPS = 60
-
-fun main() {
-  println("=== MIDI VIDEO SAMPLER ===")
-
-  val samplesDir = File("samples")
-  val pauseFile = File(samplesDir, "pause.mp4")
-  val midiFile = File("input.mid")
-  val cacheDir = File("render_cache")
-  val outputFile = File("output.mp4")
-
-  cacheDir.mkdirs()
-
-  // ========================================================================
-  // 1. READ MIDI AND CREATE TIMELINE
-  // ========================================================================
-
-  println()
-  println("[1/5] Reading MIDI...")
-
-  val notes = MidiEventReader().read(midiFile)
-  val timeline = MidiTimeline().create(notes)
-
-  val uniqueNotes = timeline
-    .filterIsInstance<TimelineNote>()
-    .map { it.event.note }
-    .toSet()
-
-  println(
-    "[MIDI] Found ${notes.size} notes using " +
-        "${uniqueNotes.size} unique pitches."
-  )
-  println("[MIDI] Timeline events: ${timeline.size}")
-
-  // ========================================================================
-  // 2. INITIALIZE AUDIO AND VIDEO ENGINES
-  // ========================================================================
-
-  println()
-  println("[2/5] Initializing rendering engines...")
-
-  val audioSynth = AudioSynthesizer(
-    sampleRate = AUDIO_SAMPLE_RATE,
-    chunkDurationSeconds = AUDIO_CHUNK_SECONDS
-  )
-
-  val videoRenderer = MemoryVideoRenderer(
-    fps = VIDEO_FPS,
-    maxCacheMb = FRAME_CACHE_MAX_MB
-  )
-
+class PipelineContext(val config: SamplerConfig) {
+  val pauseFile = File(config.samplesDir, "pause.mp4")
+  val masterWav = File(config.cacheDir, "master_audio.wav")
+  val audioSynth =
+    AudioSynthesizer(sampleRate = config.audioSampleRate, chunkDurationSeconds = config.audioChunkSeconds)
+  val videoRenderer = MemoryVideoRenderer(fps = config.videoFps, maxCacheMb = config.frameCacheMaxMb)
   val pcmSamples = mutableMapOf<String, AudioSample>()
   val frameSources = mutableMapOf<String, File>()
+  var notes: List<NoteEvent> = emptyList()
+  var timeline: List<TimelineEvent> = emptyList()
+  var uniqueNotes: Set<String> = emptySet()
+}
 
-  // ========================================================================
-  // 3. LOAD ONLY AUDIO FROM REQUIRED SAMPLES
-  // ========================================================================
+class SamplerPipeline(private val config: SamplerConfig = SamplerConfig()) {
+  fun execute() {
+    println("=== MIDI VIDEO SAMPLER ===")
+    config.cacheDir.mkdirs()
+    val context = PipelineContext(config)
 
-  println()
-  println("[3/5] Loading audio samples...")
+    readMidiStep(context)
+    initEnginesStep(context)
+    loadAudioStep(context)
+    synthesizeAudioStep(context)
+    renderVideoStep(context)
+    cleanupStep(context)
+  }
 
-  Profiler.measure("Loading audio samples") {
-    for (note in uniqueNotes) {
-      val sampleVideo = File(samplesDir, "$note.mp4")
+  private fun readMidiStep(context: PipelineContext) {
+    println()
+    println("[1/5] Reading MIDI...")
+    context.notes = MidiEventReader().read(context.config.midiFile)
+    context.timeline = MidiTimeline().create(context.notes)
+    context.uniqueNotes = context.timeline.filterIsInstance<TimelineNote>().map { it.event.note }.toSet()
+    println("[MIDI] Found ${context.notes.size} notes using ${context.uniqueNotes.size} unique pitches.")
+    println("[MIDI] Timeline events: ${context.timeline.size}")
+  }
 
-      if (!sampleVideo.exists()) {
-        println(
-          "[WARNING] Missing sample for note $note: " +
-              sampleVideo.absolutePath
+  private fun initEnginesStep(context: PipelineContext) {
+    println()
+    println("[2/5] Initializing rendering engines...")
+  }
+
+  private fun loadAudioStep(context: PipelineContext) {
+    println()
+    println("[3/5] Loading audio samples...")
+    Profiler.measure("Loading audio samples") {
+      for (note in context.uniqueNotes) {
+        val sampleVideo = File(context.config.samplesDir, "$note.mp4")
+        if (!sampleVideo.exists()) {
+          println("[WARNING] Missing sample for note $note: ${sampleVideo.absolutePath}")
+          continue
+        }
+        println("[AUDIO] Loading: ${sampleVideo.name}")
+        context.pcmSamples[note] = context.audioSynth.extractSamplePcm(
+          videoFile = sampleVideo,
+          tempWav = File(context.config.cacheDir, "sample_$note.wav")
         )
-        continue
+        context.frameSources[note] = sampleVideo
       }
-
-      println("[AUDIO] Loading: ${sampleVideo.name}")
-
-      pcmSamples[note] = audioSynth.extractSamplePcm(
-        videoFile = sampleVideo,
-        tempWav = File(cacheDir, "sample_$note.wav")
-      )
-
-      frameSources[note] = sampleVideo
+      if (context.pauseFile.exists()) {
+        println("[AUDIO] Loading pause sample...")
+        context.pcmSamples[PAUSE_KEY] = context.audioSynth.extractSamplePcm(
+          videoFile = context.pauseFile,
+          tempWav = File(context.config.cacheDir, "sample_pause.wav")
+        )
+        context.frameSources[PAUSE_KEY] = context.pauseFile
+      } else {
+        println("[WARNING] No pause sample found. Timeline gaps will use the fallback frame.")
+      }
     }
+    require(context.frameSources.isNotEmpty()) { "No video samples were found in ${context.config.samplesDir.absolutePath}." }
+  }
 
-    if (pauseFile.exists()) {
-      println("[AUDIO] Loading pause sample...")
-
-      pcmSamples[PAUSE_KEY] = audioSynth.extractSamplePcm(
-        videoFile = pauseFile,
-        tempWav = File(cacheDir, "sample_pause.wav")
-      )
-
-      frameSources[PAUSE_KEY] = pauseFile
-    } else {
-      println(
-        "[WARNING] No pause sample found. " +
-            "Timeline gaps will use the fallback frame."
+  private fun synthesizeAudioStep(context: PipelineContext) {
+    println()
+    println("[4/5] Synthesizing master audio...")
+    Profiler.measure("Synthesizing master audio") {
+      context.audioSynth.synthesize(
+        timeline = context.timeline,
+        samples = context.pcmSamples,
+        outputFile = context.masterWav
       )
     }
   }
 
-  require(frameSources.isNotEmpty()) {
-    "No video samples were found in ${samplesDir.absolutePath}."
+  private fun renderVideoStep(context: PipelineContext) {
+    println()
+    println("[5/5] Rendering final MP4...")
+    println("[CONFIG] Frame cache limit: ${context.config.frameCacheMaxMb} MB")
+    println("[CONFIG] Audio chunk size: ${context.config.audioChunkSeconds} seconds")
+    println("[CONFIG] Video FPS: ${context.config.videoFps}")
+    Profiler.measure("Rendering and encoding final MP4") {
+      context.videoRenderer.renderVideo(
+        timeline = context.timeline,
+        frameSources = context.frameSources,
+        masterAudioWav = context.masterWav,
+        outputMp4 = context.config.outputFile
+      )
+    }
   }
 
-  // ========================================================================
-  // 4. SYNTHESIZE MASTER AUDIO
-  // ========================================================================
-
-  println()
-  println("[4/5] Synthesizing master audio...")
-
-  val masterWav = File(cacheDir, "master_audio.wav")
-
-  Profiler.measure("Synthesizing master audio") {
-    audioSynth.synthesize(
-      timeline = timeline,
-      samples = pcmSamples,
-      outputFile = masterWav
-    )
+  private fun cleanupStep(context: PipelineContext) {
+    println()
+    println("[CLEANUP] Removing temporary files...")
+    context.config.cacheDir.deleteRecursively()
+    println("[CLEANUP] Temporary files removed.")
+    println()
+    println("=== PROCESSING COMPLETED SUCCESSFULLY ===")
+    println("Output: ${context.config.outputFile.absolutePath}")
   }
+}
 
-  // ========================================================================
-  // 5. RENDER FINAL VIDEO
-  // ========================================================================
-
-  println()
-  println("[5/5] Rendering final MP4...")
-  println("[CONFIG] Frame cache limit: $FRAME_CACHE_MAX_MB MB")
-  println("[CONFIG] Audio chunk size: $AUDIO_CHUNK_SECONDS seconds")
-  println("[CONFIG] Video FPS: $VIDEO_FPS")
-
-  Profiler.measure("Rendering and encoding final MP4") {
-    videoRenderer.renderVideo(
-      timeline = timeline,
-      frameSources = frameSources,
-      masterAudioWav = masterWav,
-      outputMp4 = outputFile
-    )
-  }
-
-  // ========================================================================
-  // CLEANUP
-  // ========================================================================
-
-  println()
-  println("[CLEANUP] Removing temporary files...")
-
-  cacheDir.deleteRecursively()
-
-  println("[CLEANUP] Temporary files removed.")
-  println()
-  println("=== PROCESSING COMPLETED SUCCESSFULLY ===")
-  println("Output: ${outputFile.absolutePath}")
+fun main() {
+  SamplerPipeline().execute()
 }
