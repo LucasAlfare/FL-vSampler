@@ -286,6 +286,7 @@ class AudioSynthesizer(private val sampleRate: Int = 48_000, private val chunkDu
     for (event in timeline) {
       val key = event.sampleKey()
       val sample = samples[key] ?: continue
+      val velocityGain = event.velocityGain()
       val startSample = (event.start * sampleRate / 1000.0).toInt()
       val durationSamples = (event.duration * sampleRate / 1000.0).toInt()
       val maxCopy = minOf(sample.left.size, durationSamples + fadeSamples)
@@ -299,9 +300,10 @@ class AudioSynthesizer(private val sampleRate: Int = 48_000, private val chunkDu
           val progress = (sourceIndex - durationSamples).toFloat() / fadeSamples
           ((1.0 + cos(Math.PI * progress)) * 0.5).toFloat()
         } else 1.0f
+        val finalGain = gain * velocityGain
         val targetIndex = startSample + sourceIndex - chunkStartSample
-        masterL[targetIndex] += sample.left[sourceIndex] * gain
-        masterR[targetIndex] += sample.right[sourceIndex] * gain
+        masterL[targetIndex] += sample.left[sourceIndex] * finalGain
+        masterR[targetIndex] += sample.right[sourceIndex] * finalGain
       }
     }
   }
@@ -382,7 +384,6 @@ class RamFrameCache(maxBytes: Long) {
   private var hits = 0L
   private var misses = 0L
   private var evictions = 0L
-
   @Synchronized
   fun get(source: String, frameIndex: Int): ByteArray? {
     val value = cache[CacheKey(source, frameIndex)]
@@ -428,15 +429,7 @@ class RamFrameCache(maxBytes: Long) {
 }
 
 @Suppress("DuplicatedCode")
-class MemoryVideoRenderer(
-  private val fps: Int = 60,
-  maxCacheMb: Int = 512,
-  private val outputWidth: Int? = null,
-  private val outputHeight: Int? = null,
-  private val videoPreset: String = "fast",
-  private val videoCrf: Int = 23,
-  private val audioBitrate: String = "192k"
-) {
+class MemoryVideoRenderer(private val fps: Int = 60, maxCacheMb: Int = 512) {
   private val frameCache = RamFrameCache(maxBytes = maxCacheMb.toLong() * 1024 * 1024)
   private val decodedImageCache = object : LinkedHashMap<String, BufferedImage>(32, 0.75f, true) {
     override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, BufferedImage>?): Boolean {
@@ -447,9 +440,6 @@ class MemoryVideoRenderer(
   init {
     require(fps > 0) { "Video FPS must be greater than zero." }
     require(maxCacheMb > 0) { "Frame cache size must be greater than zero." }
-    if (outputWidth != null) require(outputWidth > 0) { "Output width must be greater than zero." }
-    if (outputHeight != null) require(outputHeight > 0) { "Output height must be greater than zero." }
-    require(videoCrf in 0..51) { "CRF must be within 0..51." }
   }
 
   private fun getFrame(videoFile: File, frameIndex: Int): ByteArray {
@@ -597,22 +587,18 @@ class MemoryVideoRenderer(
     val noteSourceEntry = frameSources.entries.firstOrNull { it.key != PAUSE_KEY }
       ?: error("No note samples were loaded; cannot determine output resolution.")
     val referenceSource = noteSourceEntry.value
-    val canvasW: Int
-    val canvasH: Int
-    if (outputWidth != null && outputHeight != null) {
-      canvasW = outputWidth
-      canvasH = outputHeight
-      println("[VIDEO] Output resolution forced to ${canvasW}x${canvasH}.")
-    } else {
-      val referenceFrameBytes = getFrame(referenceSource, 0)
-      val referenceImg = ImageIO.read(ByteArrayInputStream(referenceFrameBytes))
-        ?: error("Failed to decode first frame from ${referenceSource.name}.")
-      canvasW = referenceImg.width
-      canvasH = referenceImg.height
-      println("[VIDEO] Output resolution derived from ${referenceSource.name}: ${canvasW}x${canvasH}.")
-    }
+    val referenceFrameBytes = getFrame(referenceSource, 0)
+    val referenceImg = ImageIO.read(ByteArrayInputStream(referenceFrameBytes))
+      ?: error("Failed to decode first frame from ${referenceSource.name}.")
+    val canvasW = referenceImg.width
+    val canvasH = referenceImg.height
+    println("[VIDEO] Reference sample: ${referenceSource.name} — output resolution set to ${canvasW}x${canvasH}.")
     val fallbackSource = frameSources[PAUSE_KEY] ?: referenceSource
-    val fallbackFrameBytes = getFrame(fallbackSource, 0)
+    val fallbackFrameBytes =
+      if (fallbackSource.absoluteFile.normalize() == referenceSource.absoluteFile.normalize()) referenceFrameBytes else getFrame(
+        fallbackSource,
+        0
+      )
     println("[VIDEO] Analyzing frame demand per sample...")
     val maxFrameIndexPerSource = computeMaxFrameIndexPerSource(videoTimeline, frameSources, fallbackSource, totalFrames)
     prefetchFramesParallel(maxFrameIndexPerSource)
@@ -623,8 +609,8 @@ class MemoryVideoRenderer(
       "-framerate", fps.toString(),
       "-i", "pipe:0",
       "-i", masterAudioWav.absolutePath,
-      "-c:v", "libx264", "-preset", videoPreset, "-crf", videoCrf.toString(), "-pix_fmt", "yuv420p",
-      "-c:a", "aac", "-b:a", audioBitrate,
+      "-c:v", "libx264", "-preset", "fast", "-pix_fmt", "yuv420p",
+      "-c:a", "aac", "-b:a", "192k",
       "-shortest",
       outputMp4.absolutePath
     ).redirectError(ProcessBuilder.Redirect.INHERIT).start()
@@ -753,6 +739,33 @@ private fun TimelineEvent.sampleKey(): String = when (this) {
   is TimelineNote -> event.note; is TimelinePause -> PAUSE_KEY
 }
 
+private fun TimelineEvent.velocityGain(): Float = when (this) {
+  is TimelineNote  -> velocityToGain(event.velocity)
+  is TimelinePause -> 1.0f   // silêncios não têm velocity, mantém neutro
+}
+
+/**
+ * Converte velocity MIDI (1..127) em fator de ganho (0..1).
+ * Troque a linha `return` para experimentar curvas diferentes.
+ *
+ *   LINEAR     -> som mais "cru", diferenças pequenas
+ *   QUADRÁTICA -> som mais natural/pianístico, dinâmica acentuada
+ *   SQRT       -> compressão, notas fracas ficam mais altas
+ *   PISO + X   -> evita que velocity baixíssima soe muda
+ */
+private fun velocityToGain(velocity: Int): Float {
+  val v = velocity.coerceIn(1, 127) / 127.0f
+
+  // >>> DESCOMENTE A CURVA DESEJADA: <<<
+  return v                    // linear
+  // return v * v             // quadrática (mais dinâmica)
+  // return kotlin.math.sqrt(v) // compressão (mais "achatado")
+
+  // Se quiser um piso (ex.: mínimo 20% de volume mesmo em pp):
+  // val floor = 0.2f
+  // return floor + (1f - floor) * v * v
+}
+
 private fun ByteArray.writeAscii(offset: Int, value: String) {
   value.forEachIndexed { index, char -> this[offset + index] = char.code.toByte() }
 }
@@ -762,11 +775,6 @@ data class SamplerConfig(
   val audioChunkSeconds: Int = 10,
   val audioSampleRate: Int = 48_000,
   val videoFps: Int = 60,
-  val outputWidth: Int? = 1920,
-  val outputHeight: Int? = 1080,
-  val videoPreset: String = "fast",
-  val videoCrf: Int = 23,
-  val audioBitrate: String = "192k",
   val samplesDir: File = File("samples"),
   val midiFile: File = File("input.mid"),
   val cacheDir: File = File("render_cache"),
@@ -778,15 +786,7 @@ class PipelineContext(val config: SamplerConfig) {
   val masterWav = File(config.cacheDir, "master_audio.wav")
   val audioSynth =
     AudioSynthesizer(sampleRate = config.audioSampleRate, chunkDurationSeconds = config.audioChunkSeconds)
-  val videoRenderer = MemoryVideoRenderer(
-    fps = config.videoFps,
-    maxCacheMb = config.frameCacheMaxMb,
-    outputWidth = config.outputWidth,
-    outputHeight = config.outputHeight,
-    videoPreset = config.videoPreset,
-    videoCrf = config.videoCrf,
-    audioBitrate = config.audioBitrate
-  )
+  val videoRenderer = MemoryVideoRenderer(fps = config.videoFps, maxCacheMb = config.frameCacheMaxMb)
   val pcmSamples = mutableMapOf<String, AudioSample>()
   val frameSources = mutableMapOf<String, File>()
   var notes: List<NoteEvent> = emptyList()
@@ -866,8 +866,6 @@ class SamplerPipeline(private val config: SamplerConfig = SamplerConfig()) {
     println("[CONFIG] Frame cache limit: ${context.config.frameCacheMaxMb} MB")
     println("[CONFIG] Audio chunk size: ${context.config.audioChunkSeconds} seconds")
     println("[CONFIG] Video FPS: ${context.config.videoFps}")
-    println("[CONFIG] Output resolution: ${context.config.outputWidth ?: "auto"}x${context.config.outputHeight ?: "auto"}")
-    println("[CONFIG] Video preset: ${context.config.videoPreset}, CRF: ${context.config.videoCrf}, Audio bitrate: ${context.config.audioBitrate}")
     Profiler.measure("Rendering and encoding final MP4") {
       context.videoRenderer.renderVideo(
         videoTimeline = context.videoTimeline,
