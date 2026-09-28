@@ -1,7 +1,6 @@
 <div align="center">
 
-```
-                                                                           
+```                                                                           
  ▄▄▄▄▄▄▄ ▄▄▄                   ▄▄▄▄▄▄▄                      ▄▄             
 ███▀▀▀▀▀ ███                  █████▀▀▀                      ██             
 ███▄▄    ███            ██ ██  ▀████▄   ▀▀█▄ ███▄███▄ ████▄ ██ ▄█▀█▄ ████▄ 
@@ -33,15 +32,15 @@ per-note sample videos into a synchronized `.mp4` — built on top of the from-s
 - [Why this project exists](#why-this-project-exists)
 - [Features](#features)
 - [How it works](#how-it-works)
-  - [Pipeline overview](#pipeline-overview)
-  - [The video composition strategy](#the-video-composition-strategy)
+    - [Pipeline overview](#pipeline-overview)
+    - [The video composition strategy](#the-video-composition-strategy)
 - [Requirements](#requirements)
 - [Getting started](#getting-started)
-  - [1. Install the JDK](#1-install-the-jdk)
-  - [2. Install FFmpeg](#2-install-ffmpeg)
-  - [3. Clone the project](#3-clone-the-project)
-  - [4. Provide the input](#4-provide-the-input)
-  - [5. Run](#5-run)
+    - [1. Install the JDK](#1-install-the-jdk)
+    - [2. Install FFmpeg](#2-install-ffmpeg)
+    - [3. Clone the project](#3-clone-the-project)
+    - [4. Provide the input](#4-provide-the-input)
+    - [5. Run](#5-run)
 - [Preparing your samples](#preparing-your-samples)
 - [Preparing your MIDI](#preparing-your-midi)
 - [Configuration](#configuration)
@@ -129,7 +128,11 @@ so that a 10-minute song does not blow up the heap.
 - **Direct streaming to FFmpeg** — RGB24 frames are piped straight into the
   encoder; no intermediate segments are written to disk.
 - **Multi-note composition** — up to **4 simultaneous notes** are laid out on a
-  grid (1×1, 2×1, 3×1, or 2×2), letterboxed to preserve aspect ratio.
+  grid (1×1, 2×1, 3×1, or 2×2) on a canvas sized to the configured output
+  resolution, each cell letterboxed to preserve its sample's aspect ratio.
+- **Configurable output** — resolution, FPS, x264 preset, CRF, and AAC bitrate
+  are all exposed through `SamplerConfig`, so you can trade quality for speed
+  without editing the pipeline.
 - **Optional pause sample** — `samples/pause.mp4` plays during rests; if absent,
   a fallback frame is used.
 
@@ -146,18 +149,15 @@ flowchart TD
     C --> D[Absolute-time timeline<br/>note, start, duration, velocity]
     D --> E[Audio timeline]
     D --> F[Video timeline]
-
     E --> G[Per-note PCM extraction<br/>FFmpeg -> Float32]
     G --> H[Chunked mixing<br/>Pass 1: peak analysis]
     H --> I[Chunked mixing<br/>Pass 2: normalize + write]
     I --> J[master_audio.wav]
-
     F --> K[Frame demand analysis<br/>dry-run of the render loop]
     K --> L[Parallel prefetch<br/>1 FFmpeg per sample]
     L --> M[LRU frame cache<br/>encoded JPEGs]
     M --> N[Frame composition<br/>grid layout, letterbox]
     N --> O[RGB24 pipe]
-
     O --> P[FFmpeg encoder]
     J --> P
     P --> Q[output.mp4]
@@ -229,19 +229,25 @@ from disk, and produces H.264 / AAC / `yuv420p`:
 
 ```text
 ffmpeg -y \
-  -f rawvideo -pixel_format rgb24 -video_size 1280x720 -framerate 60 \
+  -f rawvideo -pixel_format rgb24 \
+  -video_size {W}x{H} -framerate {FPS} \
   -i pipe:0 \
   -i master_audio.wav \
-  -c:v libx264 -preset fast -pix_fmt yuv420p \
-  -c:a aac -b:a 192k \
+  -c:v libx264 -preset {preset} -crf {crf} -pix_fmt yuv420p \
+  -c:a aac -b:a {bitrate} \
   -shortest output.mp4
 ```
+
+`{W}x{H}` is the resolved output resolution — either the configured
+`outputWidth`/`outputHeight` (default `1920x1080`), or, when both are set to
+`null`, derived from the first frame of the first note sample. `{preset}`,
+`{crf}` and `{bitrate}` come straight from `SamplerConfig`.
 
 ---
 
 ### The video composition strategy
 
-This is the heart of FL-vSampler, so it deserves its own section.
+This is an important part of FL-vSampler, so it deserves its own section.
 
 **The song is sliced at every note boundary.** Every `start` and every
 `start + duration` becomes a cut point. Between two consecutive cut points, the
@@ -272,13 +278,22 @@ fit its cell while preserving the source aspect ratio:
 - If the image is wider than the cell → fit by width, add vertical bars.
 - If the image is taller than the cell → fit by height, add horizontal bars.
 
-**When no note is sounding**, the fallback frame is drawn full-screen: the first
-frame of `samples/pause.mp4` if it exists, otherwise the first frame of the first
-available sample.
+Note that the cells themselves may already have a different aspect ratio from
+the sample. In a **1×1** layout, for example, a 4:3 sample on a 16:9 output
+is pillarboxed. In **2×2**, cells inherit the output's aspect, so if your
+samples are native 16:9 the grid tiles seamlessly with **no bars**; if they
+aren't, each cell gets its own letterbox. No stretching ever happens — only
+contain-fit.
 
-**Everything is composited into a single 1280×720 `BufferedImage` that is
-allocated once** and reused for the whole render. No per-frame allocation, no
-intermediate video segments written to disk.
+When no note is sounding, the fallback frame is contain-fit into the full
+output rectangle (so if the fallback sample's aspect ratio differs from the
+output's, bars appear).
+
+**Everything is composited into a single `BufferedImage` at the configured
+output resolution** (default 1920×1080, or derived from the sample if
+`outputWidth`/`outputHeight` are `null`). The canvas is **allocated once** and
+reused for the whole render. No per-frame allocation, no intermediate video
+segments written to disk.
 
 ---
 
@@ -406,9 +421,13 @@ tool, sanitize your sample library:
   the video will cut back to the fallback or the next grid). A uniform length —
   or at least a length long enough to cover the longest MIDI note — produces the
   most musical results.
-- **Consistent resolution and frame rate.** FL-vSampler scales everything to
-  1280×720 @ the configured FPS, but starting from a uniform source avoids
-  aspect-ratio surprises inside cells.
+- **Consistent resolution and frame rate.** Samples are **not rescaled at
+  extraction time** — their native resolution and aspect ratio are preserved,
+  and they are contain-fit (letterboxed) inside each grid cell at composition
+  time. Using a uniform source resolution is still strongly recommended so
+  that all cells look homogeneous and no per-cell scaling artifacts appear.
+  The frame rate **is** normalized during extraction to match `videoFps`, so
+  that sample playback stays in sync with the MIDI timeline.
 - **Consistent loudness.** The audio pipeline normalizes the *master* to 0.95
   peak, but per-sample loudness differences will still be audible. Normalize
   your samples beforehand if you care about balance.
@@ -447,10 +466,15 @@ All pipeline knobs live in `SamplerConfig`:
 
 ```kotlin
 data class SamplerConfig(
-  val frameCacheMaxMb: Int = 512,   // LRU budget for encoded frames
-  val audioChunkSeconds: Int = 10,  // audio mixing window size
-  val audioSampleRate: Int = 48_000,// output sample rate (Hz)
-  val videoFps: Int = 60,           // output FPS and sample resample rate
+  val frameCacheMaxMb: Int = 512,       // LRU budget for encoded frames
+  val audioChunkSeconds: Int = 10,      // audio mixing window size
+  val audioSampleRate: Int = 48_000,    // output sample rate (Hz)
+  val videoFps: Int = 60,               // output FPS and sample resample rate
+  val outputWidth: Int? = 1920,         // output width, or null to derive from sample
+  val outputHeight: Int? = 1080,        // output height, or null to derive from sample
+  val videoPreset: String = "fast",     // x264 preset: ultrafast..veryslow
+  val videoCrf: Int = 23,               // x264 CRF (0..51, lower = better)
+  val audioBitrate: String = "192k",    // AAC bitrate
   val samplesDir: File = File("samples"),
   val midiFile: File = File("input.mid"),
   val cacheDir: File = File("render_cache"),
@@ -466,11 +490,20 @@ fun main() {
     SamplerConfig(
       videoFps = 30,
       frameCacheMaxMb = 256,
+      outputWidth = 1280,
+      outputHeight = 720,
+      videoPreset = "medium",
+      videoCrf = 20,
+      audioBitrate = "320k",
       outputFile = File("my_song.mp4")
     )
   ).execute()
 }
 ```
+
+> Setting `outputWidth` and `outputHeight` to `null` reverts to the legacy
+> behavior of deriving the output resolution from the first frame of the first
+> note sample.
 
 ---
 
@@ -545,7 +578,7 @@ The current implementation does **not** yet support:
 - Velocity layers (`C4_v80.mp4`, `C4_v120.mp4`, …).
 - Per-note visual effects (fades, zooms, glows).
 - Explicit instrument mapping (a `mapping.json` per project).
-- Non-1280×720 output resolutions.
+- Per-sample resolution normalization to remove letterboxing entirely.
 
 ---
 
