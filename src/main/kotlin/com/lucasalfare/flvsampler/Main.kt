@@ -671,6 +671,7 @@ class RamFrameCache(maxBytes: Long) {
   )
 
   /** Drops every cached frame and resets the byte counter. Counters are kept. */
+  @Suppress("unused")
   @Synchronized
   fun clear() {
     cache.clear(); currentBytes = 0
@@ -696,10 +697,11 @@ class RamFrameCache(maxBytes: Long) {
  *  3. The main frame loop renders with a warm cache, so every `getFrame` call
  *     is a cache hit and no process is spawned inside the loop.
  *
- * @property fps        Output frame rate. Also the rate at which each sample
+ * @property fps        Output frame rate. Also, the rate at which each sample
  *                      is resampled, so sample playback stays in sync.
  * @property maxCacheMb Byte budget for the [RamFrameCache], in megabytes.
  */
+@Suppress("DuplicatedCode")
 class MemoryVideoRenderer(private val fps: Int = 60, maxCacheMb: Int = 512) {
   private val frameCache = RamFrameCache(maxBytes = maxCacheMb.toLong() * 1024 * 1024)
 
@@ -746,7 +748,7 @@ class MemoryVideoRenderer(private val fps: Int = 60, maxCacheMb: Int = 512) {
 
     val frameBytes = try {
       getFrame(videoFile, frameIndex)
-    } catch (e: Exception) {
+    } catch (_: Exception) {
       fallbackFrameBytes
     }
 
@@ -959,7 +961,7 @@ class MemoryVideoRenderer(private val fps: Int = 60, maxCacheMb: Int = 512) {
    *     reused [BufferedImage], convert INT_RGB → RGB24 in place, and write
    *     into the ffmpeg stdin.
    *
-   * The composition buffers (canvas, [Graphics2D], [ByteArray], pixel array)
+   * The composition buffers (canvas, [java.awt.Graphics2D], [ByteArray], pixel array)
    * are allocated once and reused for the whole render.
    *
    * @param videoTimeline Non-empty list of active-note segments.
@@ -1279,6 +1281,7 @@ class SamplerPipeline(private val config: SamplerConfig = SamplerConfig()) {
    * Stage 2: reserved for engine warm-up tasks. No-op because the engines are
    * constructed eagerly by [PipelineContext].
    */
+  @Suppress("unused")
   private fun initEnginesStep(context: PipelineContext) {
     println()
     println("[2/5] Initializing rendering engines...")
