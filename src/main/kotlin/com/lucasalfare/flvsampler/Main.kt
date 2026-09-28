@@ -10,12 +10,17 @@ import java.io.ByteArrayInputStream
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.Executors
 import javax.imageio.ImageIO
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.cos
+
+// ============================================================
+// 0. Diagnostics
+// ============================================================
 
 object Profiler {
   fun logMemory(tag: String) {
@@ -30,10 +35,48 @@ object Profiler {
     val start = System.currentTimeMillis()
     val result = block()
     val elapsed = System.currentTimeMillis() - start
-    logMemory("After $tag"); println("[PROFILER] Completed: $tag in $elapsed ms (${elapsed / 1000.0}s)")
+    logMemory("After $tag"); println("[PROFILER] Completed: $tag in ${SimpleDateFormat("mm:ss.SSS").format(elapsed)}")
     return result
   }
 }
+
+// ============================================================
+// 1. Shared keys / sentinels
+// ============================================================
+
+private object SampleKeys {
+  const val PAUSE = "__pause__"
+}
+
+// ============================================================
+// 2. FFmpeg adapter
+// ============================================================
+
+private object Ffmpeg {
+  /**
+   * Runs ffmpeg with all standard streams inherited and blocks until completion.
+   * Fails the pipeline on a non-zero exit code.
+   */
+  fun runInherit(vararg args: String) {
+    val exitCode = ProcessBuilder(listOf("ffmpeg", "-loglevel", "error") + args)
+      .inheritIO()
+      .start()
+      .waitFor()
+    check(exitCode == 0) { "FFmpeg failed with exit code $exitCode." }
+  }
+
+  /**
+   * Starts ffmpeg with stderr inherited and stdout piped. Caller owns the process.
+   */
+  fun start(vararg args: String): Process =
+    ProcessBuilder(listOf("ffmpeg", "-loglevel", "error") + args)
+      .redirectError(ProcessBuilder.Redirect.INHERIT)
+      .start()
+}
+
+// ============================================================
+// 3. MIDI domain
+// ============================================================
 
 data class NoteEvent(val note: String, val velocity: Int, val start: Long, val duration: Long)
 
@@ -126,6 +169,10 @@ class MidiEventReader {
   }
 }
 
+// ============================================================
+// 4. Timeline domain
+// ============================================================
+
 sealed interface TimelineEvent {
   val start: Long
   val duration: Long
@@ -177,47 +224,36 @@ class VideoTimeline {
   }
 }
 
-data class GridLayout(val cols: Int, val rows: Int) {
-  companion object {
-    fun forNoteCount(count: Int): GridLayout = when (count) {
-      0, 1 -> GridLayout(1, 1)
-      2 -> GridLayout(2, 1)
-      3 -> GridLayout(3, 1)
-      4 -> GridLayout(2, 2)
-      else -> throw IllegalArgumentException("Número de notas simultâneas não suportado para o layout visual: $count. O limite máximo é 4.")
+/**
+ * Walks a video timeline monotonically, returning the currently active segment
+ * for a given (non-decreasing) timestamp.
+ */
+private class VideoTimelineCursor(private val segments: List<VideoNotesSegment>) {
+  private var index = 0
+
+  fun activeAt(timeMs: Long): VideoNotesSegment? {
+    while (index < segments.size && timeMs >= segments[index].start + segments[index].duration) {
+      index++
     }
+    return segments.getOrNull(index)?.takeIf { timeMs >= it.start && timeMs < it.start + it.duration }
   }
 }
 
+// ============================================================
+// 5. Audio domain
+// ============================================================
+
 class AudioSample(val left: FloatArray, val right: FloatArray)
 
-class AudioSynthesizer(private val sampleRate: Int = 48_000, private val chunkDurationSeconds: Int = 10) {
-  private val fadeDurationMs = 15.0
-
-  init {
-    require(sampleRate > 0) { "Sample rate must be greater than zero." }
-    require(chunkDurationSeconds > 0) { "Audio chunk duration must be greater than zero." }
-  }
-
-  fun extractSamplePcm(videoFile: File, tempWav: File): AudioSample {
-    require(videoFile.exists()) { "Sample video not found: ${videoFile.absolutePath}" }
-    runFfmpeg(
-      "-y",
-      "-i",
-      videoFile.absolutePath,
-      "-vn",
-      "-ar",
-      sampleRate.toString(),
-      "-ac",
-      "2",
-      "-c:a",
-      "pcm_s16le",
-      tempWav.absolutePath
-    )
-    val bytes = tempWav.readBytes()
-    if (bytes.size < 44) return emptyAudioSample()
+/**
+ * Parses a PCM 16-bit stereo WAV byte stream.
+ * Returns an empty sample when the stream is too short or malformed.
+ */
+private class WavReader {
+  fun readPcm16Stereo(bytes: ByteArray): AudioSample {
+    if (bytes.size < 44) return emptySample()
     val dataOffset = findDataChunk(bytes)
-    if (dataOffset >= bytes.size) return emptyAudioSample()
+    if (dataOffset >= bytes.size) return emptySample()
     val pcmBytes = bytes.copyOfRange(dataOffset, bytes.size)
     val totalSamples = pcmBytes.size / 4
     val left = FloatArray(totalSamples)
@@ -228,6 +264,110 @@ class AudioSynthesizer(private val sampleRate: Int = 48_000, private val chunkDu
       }
     }
     return AudioSample(left, right)
+  }
+
+  private fun findDataChunk(bytes: ByteArray): Int {
+    for (i in 0..bytes.size - 8) {
+      if (bytes[i] == 'd'.code.toByte() && bytes[i + 1] == 'a'.code.toByte() &&
+        bytes[i + 2] == 't'.code.toByte() && bytes[i + 3] == 'a'.code.toByte()
+      ) return i + 8
+    }
+    return bytes.size
+  }
+
+  private fun emptySample() = AudioSample(FloatArray(0), FloatArray(0))
+}
+
+/**
+ * Writes RIFF/WAVE PCM 16-bit stereo files, streaming the payload.
+ */
+private class WavWriter {
+  fun writeStreaming(file: File, totalSamples: Int, sampleRate: Int, block: (BufferedOutputStream) -> Unit) {
+    val totalDataLen = totalSamples.toLong() * 4
+    val totalSize = totalDataLen + 36
+    require(totalDataLen <= 0xFFFFFFFFL) { "WAV file is too large for classic RIFF PCM." }
+    file.outputStream().buffered(64 * 1024)
+      .use { out ->
+        out.write(createHeader(totalDataLen, totalSize, sampleRate))
+        block(out)
+      }
+  }
+
+  fun writeChunkAsPcm16(
+    out: BufferedOutputStream,
+    masterL: FloatArray,
+    masterR: FloatArray,
+    sampleCount: Int,
+    scale: Float
+  ) {
+    val buffer = ByteBuffer.allocate(sampleCount * 4).order(ByteOrder.LITTLE_ENDIAN)
+    repeat(sampleCount) { i ->
+      buffer.putShort(toPcm16(masterL[i] * scale))
+      buffer.putShort(toPcm16(masterR[i] * scale))
+    }
+    out.write(buffer.array())
+  }
+
+  private fun createHeader(totalDataLen: Long, totalSize: Long, sampleRate: Int): ByteArray {
+    val header = ByteArray(44)
+    val byteRate = sampleRate.toLong() * 4
+    header.writeAscii(0, "RIFF"); writeIntLE(header, 4, totalSize); header.writeAscii(8, "WAVE")
+    header.writeAscii(12, "fmt ")
+    writeIntLE(header, 16, 16); writeShortLE(header, 20, 1); writeShortLE(header, 22, 2)
+    writeIntLE(header, 24, sampleRate.toLong()); writeIntLE(header, 28, byteRate)
+    writeShortLE(header, 32, 4); writeShortLE(header, 34, 16)
+    header.writeAscii(36, "data"); writeIntLE(header, 40, totalDataLen)
+    return header
+  }
+
+  private fun writeIntLE(array: ByteArray, offset: Int, value: Long) {
+    repeat(4) { array[offset + it] = (value shr (it * 8)).toByte() }
+  }
+
+  private fun writeShortLE(array: ByteArray, offset: Int, value: Int) {
+    array[offset] = value.toByte(); array[offset + 1] = (value shr 8).toByte()
+  }
+
+  private fun ByteArray.writeAscii(offset: Int, value: String) {
+    value.forEachIndexed { index, char -> this[offset + index] = char.code.toByte() }
+  }
+
+  private fun toPcm16(value: Float): Short = (value * 32767.0f).toInt().coerceIn(-32768, 32767).toShort()
+}
+
+/**
+ * Extracts the raw PCM audio track from a video file using FFmpeg.
+ */
+private class AudioSampleLoader(
+  private val sampleRate: Int,
+  private val wavReader: WavReader
+) {
+  fun extractSamplePcm(videoFile: File, tempWav: File): AudioSample {
+    require(videoFile.exists()) { "Sample video not found: ${videoFile.absolutePath}" }
+    Ffmpeg.runInherit(
+      "-y",
+      "-i", videoFile.absolutePath,
+      "-vn",
+      "-ar", sampleRate.toString(),
+      "-ac", "2",
+      "-c:a", "pcm_s16le",
+      tempWav.absolutePath
+    )
+    val bytes = tempWav.readBytes()
+    return wavReader.readPcm16Stereo(bytes)
+  }
+}
+
+/**
+ * Mixes a MIDI-derived timeline into a normalized WAV file.
+ */
+class AudioSynthesizer(private val sampleRate: Int = 48_000, private val chunkDurationSeconds: Int = 10) {
+  private val fadeDurationMs = 15.0
+  private val wavWriter = WavWriter()
+
+  init {
+    require(sampleRate > 0) { "Sample rate must be greater than zero." }
+    require(chunkDurationSeconds > 0) { "Audio chunk duration must be greater than zero." }
   }
 
   fun synthesize(timeline: List<TimelineEvent>, samples: Map<String, AudioSample>, outputFile: File) {
@@ -258,14 +398,14 @@ class AudioSynthesizer(private val sampleRate: Int = 48_000, private val chunkDu
     val scale = if (maxPeak > NORMALIZATION_PEAK) NORMALIZATION_PEAK / maxPeak else 1.0f
     println("[AUDIO] Global peak: $maxPeak"); println("[AUDIO] Normalization scale: $scale")
     println(); println("[AUDIO] Pass 2/2: writing normalized WAV...")
-    writeWavStreaming(outputFile, totalSamples, sampleRate) { out ->
+    wavWriter.writeStreaming(outputFile, totalSamples, sampleRate) { out ->
       var processedSamples = 0
       var currentChunk = 0
       while (processedSamples < totalSamples) {
         val count = minOf(chunkSamples, totalSamples - processedSamples)
         clearBuffers(masterL, masterR, count)
         mixChunk(timeline, samples, masterL, masterR, processedSamples, count)
-        writeChunkAsPcm16(out, masterL, masterR, count, scale)
+        wavWriter.writeChunkAsPcm16(out, masterL, masterR, count, scale)
         println("[AUDIO] WAV writing — chunk ${++currentChunk}/$totalChunks")
         processedSamples += count
       }
@@ -308,71 +448,52 @@ class AudioSynthesizer(private val sampleRate: Int = 48_000, private val chunkDu
     }
   }
 
-  private fun writeWavStreaming(file: File, totalSamples: Int, sampleRate: Int, block: (BufferedOutputStream) -> Unit) {
-    val totalDataLen = totalSamples.toLong() * 4
-    val totalSize = totalDataLen + 36
-    require(totalDataLen <= 0xFFFFFFFFL) { "WAV file is too large for classic RIFF PCM." }
-    file.outputStream().buffered(64 * 1024)
-      .use { out -> out.write(createWavHeader(totalDataLen, totalSize, sampleRate)); block(out) }
-  }
-
-  private fun writeChunkAsPcm16(
-    out: BufferedOutputStream,
-    masterL: FloatArray,
-    masterR: FloatArray,
-    sampleCount: Int,
-    scale: Float
-  ) {
-    val buffer = ByteBuffer.allocate(sampleCount * 4).order(ByteOrder.LITTLE_ENDIAN)
-    repeat(sampleCount) { i -> buffer.putShort(toPcm16(masterL[i] * scale)); buffer.putShort(toPcm16(masterR[i] * scale)) }
-    out.write(buffer.array())
-  }
-
-  private fun createWavHeader(totalDataLen: Long, totalSize: Long, sampleRate: Int): ByteArray {
-    val header = ByteArray(44)
-    val byteRate = sampleRate.toLong() * 4
-    header.writeAscii(0, "RIFF"); writeIntLE(header, 4, totalSize); header.writeAscii(8, "WAVE"); header.writeAscii(
-      12,
-      "fmt "
-    )
-    writeIntLE(header, 16, 16); writeShortLE(header, 20, 1); writeShortLE(header, 22, 2)
-    writeIntLE(header, 24, sampleRate.toLong()); writeIntLE(header, 28, byteRate)
-    writeShortLE(header, 32, 4); writeShortLE(header, 34, 16)
-    header.writeAscii(36, "data"); writeIntLE(header, 40, totalDataLen)
-    return header
-  }
-
-  private fun writeIntLE(array: ByteArray, offset: Int, value: Long) {
-    repeat(4) { array[offset + it] = (value shr (it * 8)).toByte() }
-  }
-
-  private fun writeShortLE(array: ByteArray, offset: Int, value: Int) {
-    array[offset] = value.toByte(); array[offset + 1] = (value shr 8).toByte()
-  }
-
-  private fun runFfmpeg(vararg arguments: String) {
-    val exitCode = ProcessBuilder(listOf("ffmpeg", "-loglevel", "error") + arguments).inheritIO().start().waitFor()
-    check(exitCode == 0) { "FFmpeg audio extraction failed with exit code $exitCode." }
-  }
-
-  private fun findDataChunk(bytes: ByteArray): Int {
-    for (i in 0..bytes.size - 8) {
-      if (bytes[i] == 'd'.code.toByte() && bytes[i + 1] == 'a'.code.toByte() && bytes[i + 2] == 't'.code.toByte() && bytes[i + 3] == 'a'.code.toByte()) return i + 8
-    }
-    return bytes.size
-  }
-
-  private fun emptyAudioSample() = AudioSample(FloatArray(0), FloatArray(0))
   private fun clearBuffers(left: FloatArray, right: FloatArray, size: Int) {
     Arrays.fill(left, 0, size, 0.0f); Arrays.fill(right, 0, size, 0.0f)
   }
-
-  private fun toPcm16(value: Float): Short = (value * 32767.0f).toInt().coerceIn(-32768, 32767).toShort()
 
   private companion object {
     const val NORMALIZATION_PEAK = 0.95f
   }
 }
+
+// ----- Audio timeline helpers -----
+
+private fun TimelineEvent.sampleKey(): String = when (this) {
+  is TimelineNote -> event.note
+  is TimelinePause -> SampleKeys.PAUSE
+}
+
+private fun TimelineEvent.velocityGain(): Float = when (this) {
+  is TimelineNote -> velocityToGain(event.velocity)
+  is TimelinePause -> 1.0f   // silêncios não têm velocity, mantém neutro
+}
+
+/**
+ * Converte velocity MIDI (1..127) em fator de ganho (0..1).
+ * Troque a linha `return` para experimentar curvas diferentes.
+ *
+ *   LINEAR     -> som mais "cru", diferenças pequenas
+ *   QUADRÁTICA -> som mais natural/pianístico, dinâmica acentuada
+ *   SQRT       -> compressão, notas fracas ficam mais altas
+ *   PISO + X   -> evita que velocity baixíssima soe muda
+ */
+private fun velocityToGain(velocity: Int): Float {
+  val v = velocity.coerceIn(1, 127) / 127.0f
+
+  // >>> DESCOMENTE A CURVA DESEJADA: <<<
+  return v                    // linear
+  // return v * v             // quadrática (mais dinâmica)
+  // return kotlin.math.sqrt(v) // compressão (mais "achatado")
+
+  // Se quiser um piso (ex.: mínimo 20% de volume mesmo em pp):
+  // val floor = 0.2f
+  // return floor + (1f - floor) * v * v
+}
+
+// ============================================================
+// 6. Video domain
+// ============================================================
 
 class RamFrameCache(maxBytes: Long) {
   private val maxBytes = maxBytes.coerceAtLeast(1)
@@ -384,6 +505,7 @@ class RamFrameCache(maxBytes: Long) {
   private var hits = 0L
   private var misses = 0L
   private var evictions = 0L
+
   @Synchronized
   fun get(source: String, frameIndex: Int): ByteArray? {
     val value = cache[CacheKey(source, frameIndex)]
@@ -417,62 +539,36 @@ class RamFrameCache(maxBytes: Long) {
     evictions
   )
 
-  @Suppress("unused")
-  @Synchronized
-  fun clear() {
-    cache.clear(); currentBytes = 0
-  }
-
   private companion object {
     const val MB = 1024.0 * 1024.0
   }
 }
 
-@Suppress("DuplicatedCode")
-class MemoryVideoRenderer(private val fps: Int = 60, maxCacheMb: Int = 512) {
-  private val frameCache = RamFrameCache(maxBytes = maxCacheMb.toLong() * 1024 * 1024)
-  private val decodedImageCache = object : LinkedHashMap<String, BufferedImage>(32, 0.75f, true) {
+private class DecodedImageCache(private val maxEntries: Int = 64) {
+  private val cache = object : LinkedHashMap<String, BufferedImage>(32, 0.75f, true) {
     override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, BufferedImage>?): Boolean {
-      return size > 64
+      return size > maxEntries
     }
   }
 
-  init {
-    require(fps > 0) { "Video FPS must be greater than zero." }
-    require(maxCacheMb > 0) { "Frame cache size must be greater than zero." }
-  }
+  fun get(key: String): BufferedImage? = cache[key]
 
-  private fun getFrame(videoFile: File, frameIndex: Int): ByteArray {
-    val sourceKey = videoFile.absoluteFile.normalize().path
-    val safeFrameIndex = frameIndex.coerceAtLeast(0)
-    frameCache.get(sourceKey, safeFrameIndex)?.let { return it }
-    return extractSingleFrame(videoFile, safeFrameIndex).also { frameCache.put(sourceKey, safeFrameIndex, it) }
+  fun put(key: String, image: BufferedImage) {
+    cache[key] = image
   }
+}
 
-  private fun getDecodedFrame(videoFile: File, frameIndex: Int, fallbackFrameBytes: ByteArray): BufferedImage {
-    val key = "${videoFile.absolutePath}_$frameIndex"
-    decodedImageCache[key]?.let { return it }
-    val frameBytes = try {
-      getFrame(videoFile, frameIndex)
-    } catch (_: Exception) {
-      fallbackFrameBytes
-    }
-    val img = ImageIO.read(ByteArrayInputStream(frameBytes)) ?: ImageIO.read(ByteArrayInputStream(fallbackFrameBytes))
-    if (img != null) decodedImageCache[key] = img
-    return img
-  }
-
-  private fun extractSingleFrame(videoFile: File, frameIndex: Int): ByteArray {
+private class FrameExtractor(private val fps: Int) {
+  fun extractSingle(videoFile: File, frameIndex: Int): ByteArray {
     require(videoFile.exists()) { "Video sample not found: ${videoFile.absolutePath}" }
     val timestamp = String.format(Locale.US, "%.6f", frameIndex.toDouble() / fps)
-    val process = ProcessBuilder(
-      "ffmpeg", "-loglevel", "error",
+    val process = Ffmpeg.start(
       "-ss", timestamp,
       "-i", videoFile.absolutePath,
       "-vf", "fps=$fps",
       "-frames:v", "1",
       "-f", "mjpeg", "-q:v", "3", "pipe:1"
-    ).redirectError(ProcessBuilder.Redirect.INHERIT).start()
+    )
     val bytes = process.inputStream.use { it.readBytes() }
     val exitCode = process.waitFor()
     check(exitCode == 0) { "FFmpeg failed to extract frame $frameIndex from ${videoFile.name}." }
@@ -480,75 +576,18 @@ class MemoryVideoRenderer(private val fps: Int = 60, maxCacheMb: Int = 512) {
     return bytes
   }
 
-  private fun computeMaxFrameIndexPerSource(
-    videoTimeline: List<VideoNotesSegment>,
-    frameSources: Map<String, File>,
-    fallbackSource: File,
-    totalFrames: Int
-  ): Map<File, Int> {
-    val fallbackNorm = fallbackSource.absoluteFile.normalize()
-    val maxIdx = mutableMapOf<File, Int>()
-    maxIdx[fallbackNorm] = 0
-    val frameDurationMs = 1000.0 / fps
-    var activeIndex = 0
-    for (frameIdx in 0 until totalFrames) {
-      val timeMs = (frameIdx * frameDurationMs).toLong()
-      while (activeIndex < videoTimeline.size && timeMs >= videoTimeline[activeIndex].start + videoTimeline[activeIndex].duration) {
-        activeIndex++
-      }
-      val activeSegment =
-        videoTimeline.getOrNull(activeIndex)?.takeIf { timeMs >= it.start && timeMs < it.start + it.duration }
-      val activeNotes = activeSegment?.notes ?: emptyList()
-      if (activeNotes.isEmpty()) {
-        maxIdx[fallbackNorm] = maxOf(maxIdx[fallbackNorm] ?: 0, 0)
-      } else {
-        for (note in activeNotes) {
-          val source = (frameSources[note.note] ?: fallbackSource).absoluteFile.normalize()
-          val sampleFrameIdx = ((timeMs - note.start) * fps / 1000.0).toInt().coerceAtLeast(0)
-          maxIdx[source] = maxOf(maxIdx[source] ?: 0, sampleFrameIdx)
-        }
-      }
-    }
-    return maxIdx
-  }
-
-  private fun prefetchFramesParallel(maxFrameIndexPerSource: Map<File, Int>) {
-    val tasks = maxFrameIndexPerSource.entries.filter { (file, maxIdx) -> file.exists() && maxIdx >= 0 }.toList()
-    if (tasks.isEmpty()) return
-    val poolSize = minOf(8, tasks.size)
-    val executor = Executors.newFixedThreadPool(poolSize)
-    println("[PREFETCH] Extracting frames from ${tasks.size} sample(s) using $poolSize thread(s)...")
-    try {
-      val futures = tasks.map { (source, maxIdx) ->
-        executor.submit {
-          val frameCount = maxIdx + 2
-          val extracted = extractAllFramesForSample(source, frameCount)
-          println("[PREFETCH] ${source.name}: $extracted frame(s) extracted")
-        }
-      }
-      futures.forEach { it.get() }
-    } finally {
-      executor.shutdown()
-    }
-    println("[PREFETCH] Done. ${frameCache.stats()}")
-  }
-
-  private fun extractAllFramesForSample(videoFile: File, frameCount: Int): Int {
-    val sourceKey = videoFile.absoluteFile.normalize().path
-    val process = ProcessBuilder(
-      "ffmpeg", "-loglevel", "error",
+  fun extractAll(videoFile: File, frameCount: Int): List<ByteArray> {
+    val process = Ffmpeg.start(
       "-i", videoFile.absolutePath,
       "-vf", "fps=$fps",
       "-frames:v", frameCount.toString(),
       "-f", "image2pipe",
       "-c:v", "mjpeg", "-q:v", "3", "pipe:1"
-    ).redirectError(ProcessBuilder.Redirect.INHERIT).start()
+    )
     val bytes = process.inputStream.use { it.readBytes() }
     val exitCode = process.waitFor()
     check(exitCode == 0) { "FFmpeg failed to extract frames from ${videoFile.name}." }
-    val frames = splitMjpegStream(bytes)
-    frames.forEachIndexed { index, frameBytes -> frameCache.put(sourceKey, index, frameBytes) }
-    return frames.size
+    return splitMjpegStream(bytes)
   }
 
   private fun splitMjpegStream(bytes: ByteArray): List<ByteArray> {
@@ -571,97 +610,106 @@ class MemoryVideoRenderer(private val fps: Int = 60, maxCacheMb: Int = 512) {
     }
     return frames
   }
+}
 
-  fun renderVideo(
-    videoTimeline: List<VideoNotesSegment>,
-    frameSources: Map<String, File>,
-    masterAudioWav: File,
-    outputMp4: File
-  ) {
-    require(videoTimeline.isNotEmpty()) { "Cannot render video from an empty timeline." }
-    require(masterAudioWav.exists()) { "Master audio file not found: ${masterAudioWav.absolutePath}" }
-    val totalMs = videoTimeline.maxOf { it.start + it.duration }
-    val frameDurationMs = 1000.0 / fps
-    val totalFrames = ceil(totalMs / frameDurationMs).toInt()
-    require(totalFrames > 0) { "Timeline does not contain any renderable frames." }
-    val noteSourceEntry = frameSources.entries.firstOrNull { it.key != PAUSE_KEY }
-      ?: error("No note samples were loaded; cannot determine output resolution.")
-    val referenceSource = noteSourceEntry.value
-    val referenceFrameBytes = getFrame(referenceSource, 0)
-    val referenceImg = ImageIO.read(ByteArrayInputStream(referenceFrameBytes))
-      ?: error("Failed to decode first frame from ${referenceSource.name}.")
-    val canvasW = referenceImg.width
-    val canvasH = referenceImg.height
-    println("[VIDEO] Reference sample: ${referenceSource.name} — output resolution set to ${canvasW}x${canvasH}.")
-    val fallbackSource = frameSources[PAUSE_KEY] ?: referenceSource
-    val fallbackFrameBytes =
-      if (fallbackSource.absoluteFile.normalize() == referenceSource.absoluteFile.normalize()) referenceFrameBytes else getFrame(
-        fallbackSource,
-        0
-      )
-    println("[VIDEO] Analyzing frame demand per sample...")
-    val maxFrameIndexPerSource = computeMaxFrameIndexPerSource(videoTimeline, frameSources, fallbackSource, totalFrames)
-    prefetchFramesParallel(maxFrameIndexPerSource)
-    val process = ProcessBuilder(
-      "ffmpeg", "-y",
-      "-f", "rawvideo", "-pixel_format", "rgb24",
-      "-video_size", "${canvasW}x${canvasH}",
-      "-framerate", fps.toString(),
-      "-i", "pipe:0",
-      "-i", masterAudioWav.absolutePath,
-      "-c:v", "libx264", "-preset", "fast", "-pix_fmt", "yuv420p",
-      "-c:a", "aac", "-b:a", "192k",
-      "-shortest",
-      outputMp4.absolutePath
-    ).redirectError(ProcessBuilder.Redirect.INHERIT).start()
-    println("[VIDEO] Streaming $totalFrames frames via raw RGB24 pipeline at ${canvasW}x${canvasH}..."); println("[FRAME CACHE] Initial: ${frameCache.stats()}")
-    var activeIndex = 0
-    var lastLoggedLayout: GridLayout? = null
-    val compositeCanvas = BufferedImage(canvasW, canvasH, BufferedImage.TYPE_INT_RGB)
-    val g2d = compositeCanvas.createGraphics()
-    g2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR)
-    val rgbBuffer = ByteArray(canvasW * canvasH * 3)
-    val pixelData = (compositeCanvas.raster.dataBuffer as DataBufferInt).data
-    process.outputStream.use { pipeOut ->
-      for (frameIdx in 0 until totalFrames) {
-        val timeMs = (frameIdx * frameDurationMs).toLong()
-        while (activeIndex < videoTimeline.size && timeMs >= videoTimeline[activeIndex].start + videoTimeline[activeIndex].duration) {
-          activeIndex++
-        }
-        val activeSegment =
-          videoTimeline.getOrNull(activeIndex)?.takeIf { timeMs >= it.start && timeMs < it.start + it.duration }
-        val activeNotes = activeSegment?.notes ?: emptyList()
-        val layout = GridLayout.forNoteCount(activeNotes.size)
-        if (layout != lastLoggedLayout) {
-          println("[VIDEO] Grid layout changed to ${layout.cols}x${layout.rows} (${activeNotes.size} active notes)")
-          lastLoggedLayout = layout
-        }
-        renderToCompositeCanvas(
-          g2d,
-          activeNotes,
-          layout,
-          timeMs,
-          frameSources,
-          fallbackSource,
-          fallbackFrameBytes,
-          canvasW,
-          canvasH
-        )
-        convertIntRgbToRgb24Buffer(pixelData, rgbBuffer)
-        pipeOut.write(rgbBuffer)
-        if (frameIdx > 0 && frameIdx % 1000 == 0) {
-          println(); println("[VIDEO] Frame $frameIdx / $totalFrames")
-          Profiler.logMemory("Video rendering"); println("[FRAME CACHE] ${frameCache.stats()}")
-        }
-      }
-      pipeOut.flush()
-    }
-    g2d.dispose()
-    check(process.waitFor() == 0) { "FFmpeg video encoding failed." }
-    println(); println("[FRAME CACHE] Final: ${frameCache.stats()}")
+private class FrameProvider(
+  private val extractor: FrameExtractor,
+  private val rawCache: RamFrameCache,
+  private val decodedCache: DecodedImageCache
+) {
+  fun getFrame(videoFile: File, frameIndex: Int): ByteArray {
+    val sourceKey = videoFile.absoluteFile.normalize().path
+    val safeFrameIndex = frameIndex.coerceAtLeast(0)
+    rawCache.get(sourceKey, safeFrameIndex)?.let { return it }
+    return extractor.extractSingle(videoFile, safeFrameIndex).also { rawCache.put(sourceKey, safeFrameIndex, it) }
   }
 
-  private fun renderToCompositeCanvas(
+  fun getDecodedFrame(videoFile: File, frameIndex: Int, fallbackFrameBytes: ByteArray): BufferedImage {
+    val key = "${videoFile.absolutePath}_$frameIndex"
+    decodedCache.get(key)?.let { return it }
+    val frameBytes = try {
+      getFrame(videoFile, frameIndex)
+    } catch (_: Exception) {
+      fallbackFrameBytes
+    }
+    val img = ImageIO.read(ByteArrayInputStream(frameBytes)) ?: ImageIO.read(ByteArrayInputStream(fallbackFrameBytes))
+    if (img != null) decodedCache.put(key, img)
+    return img
+  }
+}
+
+private class FrameDemandAnalyzer(private val fps: Int) {
+  fun analyze(
+    videoTimeline: List<VideoNotesSegment>,
+    frameSources: Map<String, File>,
+    fallbackSource: File,
+    totalFrames: Int
+  ): Map<File, Int> {
+    val fallbackNorm = fallbackSource.absoluteFile.normalize()
+    val maxIdx = mutableMapOf<File, Int>()
+    maxIdx[fallbackNorm] = 0
+    val frameDurationMs = 1000.0 / fps
+    val cursor = VideoTimelineCursor(videoTimeline)
+    for (frameIdx in 0 until totalFrames) {
+      val timeMs = (frameIdx * frameDurationMs).toLong()
+      val activeSegment = cursor.activeAt(timeMs)
+      val activeNotes = activeSegment?.notes ?: emptyList()
+      if (activeNotes.isEmpty()) {
+        maxIdx[fallbackNorm] = maxOf(maxIdx[fallbackNorm] ?: 0, 0)
+      } else {
+        for (note in activeNotes) {
+          val source = (frameSources[note.note] ?: fallbackSource).absoluteFile.normalize()
+          val sampleFrameIdx = ((timeMs - note.start) * fps / 1000.0).toInt().coerceAtLeast(0)
+          maxIdx[source] = maxOf(maxIdx[source] ?: 0, sampleFrameIdx)
+        }
+      }
+    }
+    return maxIdx
+  }
+}
+
+private class FramePrefetcher(
+  private val extractor: FrameExtractor,
+  private val rawCache: RamFrameCache
+) {
+  fun prefetch(maxFrameIndexPerSource: Map<File, Int>) {
+    val tasks = maxFrameIndexPerSource.entries.filter { (file, maxIdx) -> file.exists() && maxIdx >= 0 }.toList()
+    if (tasks.isEmpty()) return
+    val poolSize = minOf(8, tasks.size)
+    val executor = Executors.newFixedThreadPool(poolSize)
+    println("[PREFETCH] Extracting frames from ${tasks.size} sample(s) using $poolSize thread(s)...")
+    try {
+      val futures = tasks.map { (source, maxIdx) ->
+        executor.submit {
+          val frameCount = maxIdx + 2
+          val sourceKey = source.absoluteFile.normalize().path
+          val frames = extractor.extractAll(source, frameCount)
+          frames.forEachIndexed { index, frameBytes -> rawCache.put(sourceKey, index, frameBytes) }
+          println("[PREFETCH] ${source.name}: ${frames.size} frame(s) extracted")
+        }
+      }
+      futures.forEach { it.get() }
+    } finally {
+      executor.shutdown()
+    }
+    println("[PREFETCH] Done. ${rawCache.stats()}")
+  }
+}
+
+data class GridLayout(val cols: Int, val rows: Int) {
+  companion object {
+    fun forNoteCount(count: Int): GridLayout = when (count) {
+      0, 1 -> GridLayout(1, 1)
+      2 -> GridLayout(2, 1)
+      3 -> GridLayout(3, 1)
+      4 -> GridLayout(2, 2)
+      else -> throw IllegalArgumentException("Number of simultaneous notes not supported for the current layout/code version: $count. Max=4")
+    }
+  }
+}
+
+private class VideoCompositor(private val fps: Int, private val frameProvider: FrameProvider) {
+  fun renderToCompositeCanvas(
     g2d: java.awt.Graphics2D,
     activeNotes: List<NoteEvent>,
     layout: GridLayout,
@@ -675,7 +723,7 @@ class MemoryVideoRenderer(private val fps: Int = 60, maxCacheMb: Int = 512) {
     g2d.color = Color.BLACK
     g2d.fillRect(0, 0, canvasW, canvasH)
     if (activeNotes.isEmpty()) {
-      val img = getDecodedFrame(fallbackSource, 0, fallbackFrameBytes)
+      val img = frameProvider.getDecodedFrame(fallbackSource, 0, fallbackFrameBytes)
       val imgAspect = img.width.toDouble() / img.height
       val canvasAspect = canvasW.toDouble() / canvasH
       var drawW = canvasW
@@ -702,7 +750,7 @@ class MemoryVideoRenderer(private val fps: Int = 60, maxCacheMb: Int = 512) {
       val cellH = cellY1 - cellY0
       val source = frameSources[note.note] ?: fallbackSource
       val sampleFrameIdx = ((timeMs - note.start) * fps / 1000.0).toInt().coerceAtLeast(0)
-      val img = getDecodedFrame(source, sampleFrameIdx, fallbackFrameBytes)
+      val img = frameProvider.getDecodedFrame(source, sampleFrameIdx, fallbackFrameBytes)
       val imgAspect = img.width.toDouble() / img.height
       val cellAspect = cellW.toDouble() / cellH
       var drawW: Int
@@ -720,7 +768,7 @@ class MemoryVideoRenderer(private val fps: Int = 60, maxCacheMb: Int = 512) {
     }
   }
 
-  private fun convertIntRgbToRgb24Buffer(srcPixels: IntArray, dstBuffer: ByteArray) {
+  fun convertIntRgbToRgb24Buffer(srcPixels: IntArray, dstBuffer: ByteArray) {
     var srcIdx = 0
     var dstIdx = 0
     val totalPixels = srcPixels.size
@@ -734,41 +782,109 @@ class MemoryVideoRenderer(private val fps: Int = 60, maxCacheMb: Int = 512) {
   }
 }
 
-private const val PAUSE_KEY = "__pause__"
-private fun TimelineEvent.sampleKey(): String = when (this) {
-  is TimelineNote -> event.note; is TimelinePause -> PAUSE_KEY
+@Suppress("DuplicatedCode")
+class MemoryVideoRenderer(private val fps: Int = 60, maxCacheMb: Int = 512) {
+  private val rawCache = RamFrameCache(maxBytes = maxCacheMb.toLong() * 1024 * 1024)
+  private val decodedCache = DecodedImageCache()
+  private val extractor = FrameExtractor(fps)
+  private val frameProvider = FrameProvider(extractor, rawCache, decodedCache)
+  private val compositor = VideoCompositor(fps, frameProvider)
+  private val demandAnalyzer = FrameDemandAnalyzer(fps)
+  private val prefetcher = FramePrefetcher(extractor, rawCache)
+
+  init {
+    require(fps > 0) { "Video FPS must be greater than zero." }
+    require(maxCacheMb > 0) { "Frame cache size must be greater than zero." }
+  }
+
+  fun renderVideo(
+    videoTimeline: List<VideoNotesSegment>,
+    frameSources: Map<String, File>,
+    masterAudioWav: File,
+    outputMp4: File
+  ) {
+    require(videoTimeline.isNotEmpty()) { "Cannot render video from an empty timeline." }
+    require(masterAudioWav.exists()) { "Master audio file not found: ${masterAudioWav.absolutePath}" }
+    val totalMs = videoTimeline.maxOf { it.start + it.duration }
+    val frameDurationMs = 1000.0 / fps
+    val totalFrames = ceil(totalMs / frameDurationMs).toInt()
+    require(totalFrames > 0) { "Timeline does not contain any renderable frames." }
+    val noteSourceEntry = frameSources.entries.firstOrNull { it.key != SampleKeys.PAUSE }
+      ?: error("No note samples were loaded; cannot determine output resolution.")
+    val referenceSource = noteSourceEntry.value
+    val referenceFrameBytes = frameProvider.getFrame(referenceSource, 0)
+    val referenceImg = ImageIO.read(ByteArrayInputStream(referenceFrameBytes))
+      ?: error("Failed to decode first frame from ${referenceSource.name}.")
+    val canvasW = referenceImg.width
+    val canvasH = referenceImg.height
+    println("[VIDEO] Reference sample: ${referenceSource.name} — output resolution set to ${canvasW}x${canvasH}.")
+    val fallbackSource = frameSources[SampleKeys.PAUSE] ?: referenceSource
+    val fallbackFrameBytes =
+      if (fallbackSource.absoluteFile.normalize() == referenceSource.absoluteFile.normalize()) referenceFrameBytes
+      else frameProvider.getFrame(fallbackSource, 0)
+    println("[VIDEO] Analyzing frame demand per sample...")
+    val maxFrameIndexPerSource = demandAnalyzer.analyze(videoTimeline, frameSources, fallbackSource, totalFrames)
+    prefetcher.prefetch(maxFrameIndexPerSource)
+    val process = ProcessBuilder(
+      "ffmpeg", "-y",
+      "-f", "rawvideo", "-pixel_format", "rgb24",
+      "-video_size", "${canvasW}x${canvasH}",
+      "-framerate", fps.toString(),
+      "-i", "pipe:0",
+      "-i", masterAudioWav.absolutePath,
+      "-c:v", "libx264", "-preset", "fast", "-pix_fmt", "yuv420p",
+      "-c:a", "aac", "-b:a", "192k",
+      "-shortest",
+      outputMp4.absolutePath
+    ).redirectError(ProcessBuilder.Redirect.INHERIT).start()
+    println("[VIDEO] Streaming $totalFrames frames via raw RGB24 pipeline at ${canvasW}x${canvasH}...")
+    println("[FRAME CACHE] Initial: ${rawCache.stats()}")
+    val cursor = VideoTimelineCursor(videoTimeline)
+    var lastLoggedLayout: GridLayout? = null
+    val compositeCanvas = BufferedImage(canvasW, canvasH, BufferedImage.TYPE_INT_RGB)
+    val g2d = compositeCanvas.createGraphics()
+    g2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR)
+    val rgbBuffer = ByteArray(canvasW * canvasH * 3)
+    val pixelData = (compositeCanvas.raster.dataBuffer as DataBufferInt).data
+    process.outputStream.use { pipeOut ->
+      for (frameIdx in 0 until totalFrames) {
+        val timeMs = (frameIdx * frameDurationMs).toLong()
+        val activeSegment = cursor.activeAt(timeMs)
+        val activeNotes = activeSegment?.notes ?: emptyList()
+        val layout = GridLayout.forNoteCount(activeNotes.size)
+        if (layout != lastLoggedLayout) {
+          println("[VIDEO] Grid layout changed to ${layout.cols}x${layout.rows} (${activeNotes.size} active notes)")
+          lastLoggedLayout = layout
+        }
+        compositor.renderToCompositeCanvas(
+          g2d,
+          activeNotes,
+          layout,
+          timeMs,
+          frameSources,
+          fallbackSource,
+          fallbackFrameBytes,
+          canvasW,
+          canvasH
+        )
+        compositor.convertIntRgbToRgb24Buffer(pixelData, rgbBuffer)
+        pipeOut.write(rgbBuffer)
+        if (frameIdx > 0 && frameIdx % 1000 == 0) {
+          println(); println("[VIDEO] Frame $frameIdx / $totalFrames")
+          Profiler.logMemory("Video rendering"); println("[FRAME CACHE] ${rawCache.stats()}")
+        }
+      }
+      pipeOut.flush()
+    }
+    g2d.dispose()
+    check(process.waitFor() == 0) { "FFmpeg video encoding failed." }
+    println(); println("[FRAME CACHE] Final: ${rawCache.stats()}")
+  }
 }
 
-private fun TimelineEvent.velocityGain(): Float = when (this) {
-  is TimelineNote  -> velocityToGain(event.velocity)
-  is TimelinePause -> 1.0f   // silêncios não têm velocity, mantém neutro
-}
-
-/**
- * Converte velocity MIDI (1..127) em fator de ganho (0..1).
- * Troque a linha `return` para experimentar curvas diferentes.
- *
- *   LINEAR     -> som mais "cru", diferenças pequenas
- *   QUADRÁTICA -> som mais natural/pianístico, dinâmica acentuada
- *   SQRT       -> compressão, notas fracas ficam mais altas
- *   PISO + X   -> evita que velocity baixíssima soe muda
- */
-private fun velocityToGain(velocity: Int): Float {
-  val v = velocity.coerceIn(1, 127) / 127.0f
-
-  // >>> DESCOMENTE A CURVA DESEJADA: <<<
-  return v                    // linear
-  // return v * v             // quadrática (mais dinâmica)
-  // return kotlin.math.sqrt(v) // compressão (mais "achatado")
-
-  // Se quiser um piso (ex.: mínimo 20% de volume mesmo em pp):
-  // val floor = 0.2f
-  // return floor + (1f - floor) * v * v
-}
-
-private fun ByteArray.writeAscii(offset: Int, value: String) {
-  value.forEachIndexed { index, char -> this[offset + index] = char.code.toByte() }
-}
+// ============================================================
+// 7. Application / pipeline
+// ============================================================
 
 data class SamplerConfig(
   val frameCacheMaxMb: Int = 512,
@@ -823,6 +939,7 @@ class SamplerPipeline(private val config: SamplerConfig = SamplerConfig()) {
 
   private fun loadAudioStep(context: PipelineContext) {
     println(); println("[3/5] Loading audio samples...")
+    val loader = AudioSampleLoader(context.config.audioSampleRate, WavReader())
     Profiler.measure("Loading audio samples") {
       for (note in context.uniqueNotes) {
         val sampleVideo = File(context.config.samplesDir, "$note.mp4")
@@ -830,7 +947,7 @@ class SamplerPipeline(private val config: SamplerConfig = SamplerConfig()) {
           println("[WARNING] Missing sample for note $note: ${sampleVideo.absolutePath}"); continue
         }
         println("[AUDIO] Loading: ${sampleVideo.name}")
-        context.pcmSamples[note] = context.audioSynth.extractSamplePcm(
+        context.pcmSamples[note] = loader.extractSamplePcm(
           videoFile = sampleVideo,
           tempWav = File(context.config.cacheDir, "sample_$note.wav")
         )
@@ -838,11 +955,11 @@ class SamplerPipeline(private val config: SamplerConfig = SamplerConfig()) {
       }
       if (context.pauseFile.exists()) {
         println("[AUDIO] Loading pause sample...")
-        context.pcmSamples[PAUSE_KEY] = context.audioSynth.extractSamplePcm(
+        context.pcmSamples[SampleKeys.PAUSE] = loader.extractSamplePcm(
           videoFile = context.pauseFile,
           tempWav = File(context.config.cacheDir, "sample_pause.wav")
         )
-        context.frameSources[PAUSE_KEY] = context.pauseFile
+        context.frameSources[SampleKeys.PAUSE] = context.pauseFile
       } else {
         println("[WARNING] No pause sample found. Timeline gaps will use the fallback frame.")
       }
