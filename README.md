@@ -32,20 +32,21 @@ per-note sample videos into a synchronized `.mp4` — built on top of the from-s
 - [Why this project exists](#why-this-project-exists)
 - [Features](#features)
 - [How it works](#how-it-works)
-    - [Pipeline overview](#pipeline-overview)
-    - [The video composition strategy](#the-video-composition-strategy)
+  - [Pipeline overview](#pipeline-overview)
+  - [The video composition strategy](#the-video-composition-strategy)
 - [Requirements](#requirements)
 - [Getting started](#getting-started)
-    - [1. Install the JDK](#1-install-the-jdk)
-    - [2. Install FFmpeg](#2-install-ffmpeg)
-    - [3. Clone the project](#3-clone-the-project)
-    - [4. Provide the input](#4-provide-the-input)
-    - [5. Run](#5-run)
+  - [1. Install the JDK](#1-install-the-jdk)
+  - [2. Install FFmpeg](#2-install-ffmpeg)
+  - [3. Clone the project](#3-clone-the-project)
+  - [4. Provide the input](#4-provide-the-input)
+  - [5. Run](#5-run)
 - [Preparing your samples](#preparing-your-samples)
 - [Preparing your MIDI](#preparing-your-midi)
 - [Configuration](#configuration)
 - [Project structure](#project-structure)
 - [Architecture](#architecture)
+- [Performance & benchmarks](#performance--benchmarks)
 - [Current limitations & roadmap](#current-limitations--roadmap)
 - [Related projects](#related-projects)
 - [License](#license)
@@ -105,8 +106,9 @@ channel handling — goes through FLMidi. There is **no** other MIDI dependency.
 
 Rendering a full song as raw frames is memory-hostile. FL-vSampler was also a
 playground for a **streaming, bounded-memory** design: chunked audio mixing,
-two-pass peak normalization, LRU frame caching, and direct piping into FFmpeg —
-so that a 10-minute song does not blow up the heap.
+two-pass peak normalization, LRU frame caching, parallel chunk rendering,
+and direct piping into FFmpeg — so that a 10-minute song does not blow up
+the heap.
 
 ---
 
@@ -119,20 +121,24 @@ so that a 10-minute song does not blow up the heap.
   fade-out so tails decay cleanly.
 - **Two-pass peak normalization** — the master WAV is guaranteed to sit at
   `0.95` peak (or lower if already quieter) with no clipping.
-- **Chunked processing** — audio is mixed in configurable windows; the full master
-  buffer never lives in RAM at once.
+- **Chunked audio processing** — audio is mixed in configurable windows; the full
+  master buffer never lives in RAM at once.
 - **Bounded LRU frame cache** — encoded frames are cached with a configurable
   megabyte budget; the least-recently-used frames are evicted automatically.
 - **Parallel frame prefetch** — one FFmpeg process per sample, run concurrently
   before the render loop starts.
-- **Direct streaming to FFmpeg** — RGB24 frames are piped straight into the
+- **Parallel chunk rendering** — video frames are rendered by a pool of worker
+  threads, one chunk of frames per task, with a buffer pool eliminating
+  per-chunk allocations.
+- **Automatic hardware encoding** — FL-vSampler probes FFmpeg for
+  `h264_amf`, `h264_nvenc` and `h264_qsv`, picks the first one that actually
+  works with a test encode, and falls back to `libx264` if none is available.
+- **Direct streaming to FFmpeg** — raw BGR frames are piped straight into the
   encoder; no intermediate segments are written to disk.
-- **Multi-note composition** — up to **4 simultaneous notes** are laid out on a
-  grid (1×1, 2×1, 3×1, or 2×2) on a canvas sized to the configured output
-  resolution, each cell letterboxed to preserve its sample's aspect ratio.
-- **Configurable output** — resolution, FPS, x264 preset, CRF, and AAC bitrate
-  are all exposed through `SamplerConfig`, so you can trade quality for speed
-  without editing the pipeline.
+- **Adaptive grid composition** — for *N* simultaneous notes/tracks, a
+  matching grid (1×1, 2×1, 3×1, 2×2, 3×2, 4×2, 3×3, or an adaptive layout
+  beyond that) is chosen automatically. Each cell is letterboxed to preserve
+  the sample's aspect ratio.
 - **Optional pause sample** — `samples/pause.mp4` plays during rests; if absent,
   a fallback frame is used.
 
@@ -156,9 +162,9 @@ flowchart TD
     F --> K[Frame demand analysis<br/>dry-run of the render loop]
     K --> L[Parallel prefetch<br/>1 FFmpeg per sample]
     L --> M[LRU frame cache<br/>encoded JPEGs]
-    M --> N[Frame composition<br/>grid layout, letterbox]
+    M --> N[Parallel chunk workers<br/>compose grid, letterbox]
     N --> O[RGB24 pipe]
-    O --> P[FFmpeg encoder]
+    O --> P[FFmpeg encoder<br/>auto-selected HW or libx264]
     J --> P
     P --> Q[output.mp4]
 ```
@@ -169,9 +175,10 @@ flowchart TD
 
 The `.mid` file is parsed with **FLMidi**. Every track is merged into a single
 absolute-tick timeline, a tempo map is built from every `SetTempoMetaEvent`, and
-note-on / note-off pairs are matched per `(channel, pitch)` using a FIFO queue.
-A note-on with velocity `0` is treated as a note-off, as per the MIDI spec.
-Tick positions are finally integrated through the tempo map into **milliseconds**.
+note-on / note-off pairs are matched per `(track, channel, pitch)` using a FIFO
+queue. A note-on with velocity `0` is treated as a note-off, as per the MIDI
+spec. Tick positions are finally integrated through the tempo map into
+**milliseconds**.
 
 #### 2. Two timelines
 
@@ -179,13 +186,13 @@ From the parsed note list, two derived timelines are built:
 
 - **Audio timeline** — an ordered list of `TimelineNote` and `TimelinePause`
   events. Overlaps are preserved so the mixer can render them polyphonically.
-- **Video timeline** — the song is sliced at **every note boundary** (each
-  note's `start` and `end`), producing `VideoNotesSegment`s. Inside a segment,
-  the set of active notes is constant.
+- **Video timeline** — grouped by MIDI track, each track is sliced at **every
+  note boundary** (each note's `start` and `end`), producing
+  `VideoNotesSegment`s. Inside a segment, the set of active notes is constant.
 
-The video timeline is what makes rendering cheap: because the active set does not
-change inside a segment, the on-screen grid layout is computed **once per
-segment**, not once per frame.
+The video timeline is what makes rendering cheap: because the active set does
+not change inside a segment, the on-screen grid layout can be reasoned about
+per segment.
 
 #### 3. Audio preparation
 
@@ -211,58 +218,70 @@ Before the render loop starts, FL-vSampler **dry-runs the loop** to compute, per
 sample file, the highest frame index that will ever be requested. It then
 **prefetches** all of those frames in parallel — one FFmpeg process per sample,
 writing an `image2pipe` MJPEG stream that is split into individual JPEGs and
-pushed into the LRU cache. From then on, the main loop only ever performs
-**cache hits** — no FFmpeg process is spawned inside the frame loop.
+pushed into the LRU cache.
+
+The render loop itself is **parallelized in chunks**: a fixed pool of worker
+threads renders `videoChunkFrames` frames per task into a pooled byte buffer,
+and the main thread writes each finished chunk into FFmpeg's stdin. Frames
+inside a chunk are served from the LRU cache, so **no FFmpeg process is spawned
+inside the frame loop**.
 
 Each output frame:
 
-1. Advances to the `VideoNotesSegment` containing the current time.
-2. Chooses a grid layout from the number of active notes.
+1. Advances to the current `VideoNotesSegment` per track.
+2. Chooses a grid layout from the number of active notes in that track.
 3. Draws each active note's sample frame letterboxed inside its grid cell.
-4. Converts the composited canvas (`INT_RGB`) into an `RGB24` byte buffer.
-5. Writes the buffer into the FFmpeg encoder's stdin.
+4. Converts the composited canvas (`TYPE_3BYTE_BGR`) into the output buffer via
+   a bulk `System.arraycopy`.
+5. Writes the chunk into the FFmpeg encoder's stdin.
 
 #### 6. Final encode
 
-FFmpeg receives the raw `RGB24` frames from `pipe:0` and the `master_audio.wav`
+FFmpeg receives the raw BGR frames from `pipe:0` and the `master_audio.wav`
 from disk, and produces H.264 / AAC / `yuv420p`:
 
 ```text
 ffmpeg -y \
-  -f rawvideo -pixel_format rgb24 \
+  -f rawvideo -pixel_format bgr24 \
   -video_size {W}x{H} -framerate {FPS} \
   -i pipe:0 \
   -i master_audio.wav \
-  -c:v libx264 -preset {preset} -crf {crf} -pix_fmt yuv420p \
-  -c:a aac -b:a {bitrate} \
+  -c:v {ENCODER} {ENCODER_PARAMS} -pix_fmt yuv420p \
+  -c:a aac -b:a 192k \
   -shortest output.mp4
 ```
 
-`{W}x{H}` is the resolved output resolution — either the configured
-`outputWidth`/`outputHeight` (default `1920x1080`), or, when both are set to
-`null`, derived from the first frame of the first note sample. `{preset}`,
-`{crf}` and `{bitrate}` come straight from `SamplerConfig`.
+`{W}x{H}` is the output resolution, derived from the first decoded frame of the
+first non-pause sample. `{ENCODER}` and `{ENCODER_PARAMS}` are resolved at
+runtime by `EncoderSelector`, which probes FFmpeg and picks the best working
+hardware encoder, falling back to `libx264 -preset fast -crf 23`.
 
 ---
 
 ### The video composition strategy
 
-This is an important part of FL-vSampler, so it deserves its own section.
-
-**The song is sliced at every note boundary.** Every `start` and every
+**Each track is sliced at every note boundary.** Every `start` and every
 `start + duration` becomes a cut point. Between two consecutive cut points, the
 set of notes that are *fully sounding* is constant — call it the **active set**.
 That interval is a `VideoNotesSegment`.
 
-**Each segment is rendered as a grid whose size depends on `|active set|`:**
+**The outer grid is sized by the number of MIDI tracks.** Each track gets its
+own cell in the outer grid; tracks are laid out with the same adaptive rule as
+notes.
 
-| Active notes | Layout | Description                           |
-|:------------:|:------:|:--------------------------------------|
-|     0–1      | 1 × 1  | A single full-screen cell             |
-|      2       | 2 × 1  | Two side-by-side cells                |
-|      3       | 3 × 1  | Three vertical cells                  |
-|      4       | 2 × 2  | A 2×2 grid                            |
-|     > 4      |   —    | **Not supported** (throws at runtime) |
+**Inside each track's cell, the inner grid is sized by `|active set|`** for that
+track:
+
+| Active notes | Layout | Description                                |
+|:------------:|:------:|:-------------------------------------------|
+|     0–1      | 1 × 1  | A single full cell                         |
+|      2       | 2 × 1  | Two side-by-side cells                     |
+|      3       | 3 × 1  | Three vertical cells                       |
+|      4       | 2 × 2  | A 2×2 grid                                 |
+|     5–6      | 3 × 2  | A 3×2 grid                                 |
+|     7–8      | 4 × 2  | A 4×2 grid                                 |
+|      9       | 3 × 3  | A 3×3 grid                                 |
+|     > 9      |   —    | Adaptive near-square grid                  |
 
 **Within a segment, each cell plays the sample of its note, letterboxed.**
 The frame index for note *n* at time *t* is:
@@ -278,22 +297,15 @@ fit its cell while preserving the source aspect ratio:
 - If the image is wider than the cell → fit by width, add vertical bars.
 - If the image is taller than the cell → fit by height, add horizontal bars.
 
-Note that the cells themselves may already have a different aspect ratio from
-the sample. In a **1×1** layout, for example, a 4:3 sample on a 16:9 output
-is pillarboxed. In **2×2**, cells inherit the output's aspect, so if your
-samples are native 16:9 the grid tiles seamlessly with **no bars**; if they
-aren't, each cell gets its own letterbox. No stretching ever happens — only
-contain-fit.
+No stretching ever happens — only contain-fit. Fallback frames (used when no
+note is sounding in a cell) are cached after resize, keyed by
+`(width, height)`, so the same letterboxed fallback image is not rescaled on
+every frame.
 
-When no note is sounding, the fallback frame is contain-fit into the full
-output rectangle (so if the fallback sample's aspect ratio differs from the
-output's, bars appear).
-
-**Everything is composited into a single `BufferedImage` at the configured
-output resolution** (default 1920×1080, or derived from the sample if
-`outputWidth`/`outputHeight` are `null`). The canvas is **allocated once** and
-reused for the whole render. No per-frame allocation, no intermediate video
-segments written to disk.
+**Everything is composited into a single `BufferedImage` at the output
+resolution** — which is taken from the first frame of the first non-pause
+sample. The canvas is allocated **once per worker** and reused for the whole
+render chunk.
 
 ---
 
@@ -441,19 +453,17 @@ tool, sanitize your sample library:
 FL-vSampler reads MIDI faithfully, but its visual renderer makes a few
 assumptions. Sanitize your `.mid` before running:
 
-- **Prefer a single track.** Multi-track files are supported (all tracks are
-  merged into one absolute-tick timeline), but a single track is easier to
-  reason about and to debug.
-- **Limit simultaneous notes to 4.** The visual grid supports up to four
-  simultaneous notes; **more than four throws at runtime.** Chords of five or
-  more notes will fail to render. Split them across arpeggios, or thin them.
+- **Prefer a single track.** Multi-track files are supported (each track gets
+  its own cell in the outer grid), but a single track is easier to reason about
+  and to debug.
 - **Remove duplicated / accidental notes.** MIDI files exported from notation
   software often contain overlapping duplicate notes; these produce redundant
   grid cells and wasted prefetch work.
 - **Keep note durations reasonable.** Very short notes (a few ms) will flash a
   single frame. Very long notes will hold a single sample for a long time.
-- **Avoid dense polyphony.** The current renderer composes at most a 2×2 grid;
-  a dense chordal passage will look busy rather than beautiful.
+- **Avoid extreme polyphony within a single track.** The layout adapts to
+  note count, but a very high simultaneous-note count per track produces tiny
+  cells that look busy rather than beautiful.
 - **Mind the tempo map.** Tempo changes are supported, but wildly varying
   tempos combined with short notes can produce surprising frame demands. Keep
   the tempo map sane.
@@ -466,15 +476,12 @@ All pipeline knobs live in `SamplerConfig`:
 
 ```kotlin
 data class SamplerConfig(
-  val frameCacheMaxMb: Int = 512,       // LRU budget for encoded frames
-  val audioChunkSeconds: Int = 10,      // audio mixing window size
-  val audioSampleRate: Int = 48_000,    // output sample rate (Hz)
-  val videoFps: Int = 60,               // output FPS and sample resample rate
-  val outputWidth: Int? = 1920,         // output width, or null to derive from sample
-  val outputHeight: Int? = 1080,        // output height, or null to derive from sample
-  val videoPreset: String = "fast",     // x264 preset: ultrafast..veryslow
-  val videoCrf: Int = 23,               // x264 CRF (0..51, lower = better)
-  val audioBitrate: String = "192k",    // AAC bitrate
+  val frameCacheMaxMb: Int = 512,        // LRU budget for encoded frames
+  val audioChunkSeconds: Int = 10,       // audio mixing window size
+  val audioSampleRate: Int = 48_000,     // output sample rate (Hz)
+  val videoFps: Int = 60,                // output FPS and sample resample rate
+  val videoWorkers: Int = 0,             // 0 = auto (CPUs - 1, capped at 8)
+  val videoChunkFrames: Int = 12,        // frames per parallel chunk
   val samplesDir: File = File("samples"),
   val midiFile: File = File("input.mid"),
   val cacheDir: File = File("render_cache"),
@@ -490,20 +497,16 @@ fun main() {
     SamplerConfig(
       videoFps = 30,
       frameCacheMaxMb = 256,
-      outputWidth = 1280,
-      outputHeight = 720,
-      videoPreset = "medium",
-      videoCrf = 20,
-      audioBitrate = "320k",
+      videoWorkers = 4,
+      videoChunkFrames = 8,
       outputFile = File("my_song.mp4")
     )
   ).execute()
 }
 ```
 
-> Setting `outputWidth` and `outputHeight` to `null` reverts to the legacy
-> behavior of deriving the output resolution from the first frame of the first
-> note sample.
+The output resolution is derived at runtime from the first frame of the first
+non-pause sample; it is not configurable.
 
 ---
 
@@ -529,23 +532,31 @@ FL-vSampler/
 
 ## Architecture
 
-`Main.kt` is organized as a set of single-responsibility classes:
+`Main.kt` is organized as a set of single-responsibility structures:
 
-| Class                 | Responsibility                                                        |
-|:----------------------|:----------------------------------------------------------------------|
-| `Profiler`            | Heap + wall-clock instrumentation around expensive stages.            |
-| `NoteEvent`           | Value type for a parsed note (name, velocity, start ms, duration ms). |
-| `MidiEventReader`     | FLMidi wrapper: tracks → absolute ms timeline of `NoteEvent`s.        |
-| `MidiTimeline`        | Audio timeline: notes + pauses, preserving overlaps.                  |
-| `VideoTimeline`       | Video timeline: constant-active-set segments.                         |
-| `GridLayout`          | Layout (cols × rows) for N simultaneous notes (N ≤ 4).                |
-| `AudioSample`         | Stereo `FloatArray` pair in `[-1, 1]`.                                |
-| `AudioSynthesizer`    | FFmpeg extraction + two-pass chunked mixing + WAV writer.             |
-| `RamFrameCache`       | Thread-safe LRU cache of encoded frames, bounded by bytes.            |
-| `MemoryVideoRenderer` | Prefetch, compose, and stream frames to the FFmpeg encoder.           |
-| `SamplerConfig`       | User-tunable settings.                                                |
-| `PipelineContext`     | Shared mutable state across stages.                                   |
-| `SamplerPipeline`     | The 5-stage orchestrator.                                             |
+| Structure                   | Responsibility                                                        |
+|:----------------------------|:----------------------------------------------------------------------|
+| `logMemory` / `profileTime` | Heap + wall-clock instrumentation around expensive stages.            |
+| `Ffmpeg`                    | Process helpers (`runInherit`, `start`).                              |
+| `EncoderSelector`           | Probes FFmpeg and picks the best working H.264 encoder.               |
+| `NoteEvent`                 | Value type for a parsed note (name, velocity, start ms, duration ms). |
+| `MidiEventReader`           | FLMidi wrapper: tracks → absolute ms timeline of `NoteEvent`s.        |
+| `MidiTimeline`              | Audio timeline: notes + pauses, preserving overlaps.                  |
+| `VideoTimeline`             | Video timeline: per-track, constant-active-set segments.              |
+| `VideoTimelineCursor`       | Per-track monotonic cursor into the video segments.                   |
+| `GridLayout`                | Adaptive (cols × rows) layout for N cells.                            |
+| `AudioSample`               | Stereo `FloatArray` pair in `[-1, 1]`.                                |
+| `AudioSampleLoader`         | FFmpeg extraction + PCM16 decode into `AudioSample`.                  |
+| `WavWriter`                 | Streaming PCM16 WAV output.                                           |
+| `AudioSynthesizer`          | Two-pass chunked mixing, cosine fade, peak normalization.             |
+| `RamFrameCache`             | Thread-safe LRU cache of encoded frames, bounded by bytes.            |
+| `FallbackFrameCache`        | Small cache of resized fallback frames keyed by size.                 |
+| `FrameSource`               | Decode + extract (single / bulk) sample frames, backed by the cache.  |
+| `ChunkBufferPool`           | Reusable byte buffers for the parallel chunk renderers.               |
+| `VideoCompositor`           | Draws a frame's grid layout into the canvas.                          |
+| `MemoryVideoRenderer`       | Prefetch, parallel chunk render, stream to the FFmpeg encoder.        |
+| `SamplerConfig`             | User-tunable settings.                                                |
+| `SamplerPipeline`           | The 4-stage orchestrator.                                             |
 
 ### Design principles
 
@@ -555,9 +566,98 @@ FL-vSampler/
    pass, then served from an LRU cache in the render loop.
 3. **Two-pass normalization.** Because the master is streamed, its peak must be
    measured before it can be scaled — hence the two-pass design.
-4. **No per-frame allocation.** Canvas, `Graphics2D`, and the RGB24 buffer are
-   allocated once and reused for the entire render.
+4. **No per-frame allocation.** Canvas and pooled output buffers are reused
+   across frames; the composited raster is copied with a single bulk
+   `System.arraycopy`.
 5. **FLMidi does the MIDI.** No alternative parsing path exists.
+
+---
+
+## Performance & benchmarks
+
+The numbers below were captured on a reference Windows machine with FFmpeg
+8.1, `h264_amf` hardware encoding (AMD Ryzen 5?), 16gb RAM, 8 worker threads (`auto`), and the
+default configuration (`720×1280`, 60 FPS, `videoChunkFrames = 12`,
+`frameCacheMaxMb = 512`). Both runs use the same sample library. They are
+**kept here as a stable reference** for future tuning and regression
+comparisons.
+
+I am also leaving the full log files here, for reference, as well:
+- [example_log_1.log](example_log_1.log)
+- [example_log_2.log](example_log_2.log)
+
+For a better profiling in the future, I hope to improve my own logging and profiling strategies, in order
+to keep good statistics on this project.
+
+### Test workloads
+
+| Property                          | Benchmark A | Benchmark B |
+|:----------------------------------|:-----------:|:-----------:|
+| MIDI notes                        |     237     |     588     |
+| Unique pitches used               |     28      |     34      |
+| MIDI tracks                       |      2      |      4      |
+| Video timeline segments           |     208     |    1174     |
+| Max simultaneous notes / track    |      4      |      1      |
+| Master duration                   |  23.272 s   |  205.711 s  |
+| Output frames @ 60 FPS            |    1397     |    12343    |
+| Output resolution                 |  720×1280   |  720×1280   |
+
+### Stage-by-stage timings
+
+| Stage                                   | Benchmark A | Benchmark B |
+|:----------------------------------------|:-----------:|:-----------:|
+| Loading audio samples                   |   1.970 s   |   2.554 s   |
+| Synthesizing master audio (both passes) |   0.080 s   |   0.240 s   |
+| Frame prefetch (29 samples)             |  (merged)   |  (merged)   |
+| Rendering + encoding final MP4          |  15.358 s   |  121.986 s  |
+| **Total wall-clock (approx.)**          | **~17.5 s** | **~125 s**  |
+
+The prefetch step is included inside the "Rendering + encoding" bucket in both
+logs (it runs before the pipe opens).
+
+### Frame cache behavior
+
+| Metric                         | Benchmark A | Benchmark B |
+|:-------------------------------|:-----------:|:-----------:|
+| Frames prefetched              |    1577     |    5755     |
+| Cache footprint after prefetch |  92.67 MB   |  350.27 MB  |
+| Cache limit                    |   512 MB    |   512 MB    |
+| **Cache hits** (render)        |  **4840**   | **38 426**  |
+| **Cache misses** (render)      |    **0**    |   **32**    |
+| Evictions                      |      0      |      0      |
+
+The render loop is **effectively 100 % cache-served** — the 32 misses in
+benchmark B come from transient FFmpeg MJPEG extraction failures for a single
+sample (`A4.mp4`, frames ~482–513), which the pipeline silently falls back to
+the pause frame for. No eviction occurred in either run.
+
+### Throughput
+
+| Metric                              | Benchmark A | Benchmark B |
+|:------------------------------------|:-----------:|:-----------:|
+| Real-time speed (FFmpeg reported)   |  **1.94×**  |  **1.80×**  |
+| Output size                         |   8.9 MB    |    84 MB    |
+| Encoded video bitrate               |  3218 kb/s  |  3426 kb/s  |
+| Audio bitrate                       |  192 kb/s   |  192 kb/s   |
+
+### Observations
+
+- **Audio is essentially free.** Both passes together take well under 300 ms
+  even for a 3.5-minute master, because the mixer is a tight `FloatArray` loop
+  with no intermediate allocations per event.
+- **Audio loading dominates the pre-render stages.** ~2 s for ~29 samples is
+  spent almost entirely inside FFmpeg subprocesses (one `-vn -ar 48000` decode
+  per sample). It scales linearly with the number of unique pitches, not with
+  song length.
+- **Prefetch scales with per-sample demand, not song length.** Benchmark B uses
+  ~3.6× more encoded frame bytes than A, tracking the higher number of long
+  notes rather than the 8.8× longer master duration.
+- **Render throughput is stable at ~1.8–1.9× realtime** for a 512 MB cache
+  budget — the LRU never needs to evict anything at these frame counts, so the
+  wall-clock is bounded by the encoder and the per-frame composition cost, not
+  by I/O.
+- **Peak JVM heap stays below ~1.9 GB** even at 12 343 output frames, well
+  inside the default 4 GB ceiling used in these runs.
 
 ---
 
@@ -567,18 +667,18 @@ The current implementation does **not** yet support:
 
 - Velocity-dependent sample selection.
 - Articulations, bends, slides, or sustain.
-- Multiple instruments.
+- Multiple instruments per track.
 - Multiple cameras or visual effects.
 - Automatic sample selection.
 - Advanced musical expression.
 
 **Roadmap candidates**
 
-- Richer polyphonic layouts (beyond 4 notes; adaptive grids).
 - Velocity layers (`C4_v80.mp4`, `C4_v120.mp4`, …).
 - Per-note visual effects (fades, zooms, glows).
 - Explicit instrument mapping (a `mapping.json` per project).
 - Per-sample resolution normalization to remove letterboxing entirely.
+- Configurable output resolution.
 
 ---
 
