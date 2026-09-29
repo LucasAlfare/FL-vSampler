@@ -1,14 +1,6 @@
 <div align="center">
 
-```                                                                           
- ▄▄▄▄▄▄▄ ▄▄▄                   ▄▄▄▄▄▄▄                      ▄▄             
-███▀▀▀▀▀ ███                  █████▀▀▀                      ██             
-███▄▄    ███            ██ ██  ▀████▄   ▀▀█▄ ███▄███▄ ████▄ ██ ▄█▀█▄ ████▄ 
-███▀▀    ███      ▀▀▀▀▀ ██▄██    ▀████ ▄█▀██ ██ ██ ██ ██ ██ ██ ██▄█▀ ██ ▀▀ 
-███      ████████        ▀█▀  ███████▀ ▀█▄██ ██ ██ ██ ████▀ ██ ▀█▄▄▄ ██    
-                                                      ██                   
-                                                      ▀▀                   
-```
+<img src="flvsampler_banner_logo.png" width="600" alt="THE_COOL_PROJECT_BANNER_ART">
 
 **Turn a MIDI file into a video performance using pre-recorded clips of individual instrument notes.**
 
