@@ -1,0 +1,163 @@
+=== MIDI VIDEO SAMPLER ===
+
+[1/4] Reading MIDI...
+[MIDI] Found 237 notes using 28 unique pitches across 2 MIDI track(s).
+[MIDI] Audio timeline events: 237
+[VIDEO] Video timeline created with 208 segment(s) across 2 track(s) (max simultaneous notes within a single track: 4).
+
+[2/4] Loading audio samples...
+
+[PROFILER] Starting: Loading audio samples
+[PROFILER] Memory � Before Loading audio samples: 9 MB used / 3916 JVM maximum
+[AUDIO] Loading: F3.mp4
+[AUDIO] Loading: D#3.mp4
+[AUDIO] Loading: F#3.mp4
+[AUDIO] Loading: G3.mp4
+[AUDIO] Loading: A#3.mp4
+[AUDIO] Loading: D4.mp4
+[AUDIO] Loading: G4.mp4
+[AUDIO] Loading: D#4.mp4
+[AUDIO] Loading: A#4.mp4
+[AUDIO] Loading: D5.mp4
+[AUDIO] Loading: G5.mp4
+[AUDIO] Loading: A5.mp4
+[AUDIO] Loading: A#5.mp4
+[AUDIO] Loading: F5.mp4
+[AUDIO] Loading: F4.mp4
+[AUDIO] Loading: A4.mp4
+[AUDIO] Loading: A3.mp4
+[AUDIO] Loading: C#5.mp4
+[AUDIO] Loading: C5.mp4
+[AUDIO] Loading: G#4.mp4
+[AUDIO] Loading: C4.mp4
+[AUDIO] Loading: D#5.mp4
+[AUDIO] Loading: C6.mp4
+[AUDIO] Loading: D6.mp4
+[AUDIO] Loading: F#4.mp4
+[AUDIO] Loading: D3.mp4
+[AUDIO] Loading: E5.mp4
+[AUDIO] Loading: F#5.mp4
+[AUDIO] Loading pause sample...
+[PROFILER] Memory � After Loading audio samples: 126 MB used / 3916 JVM maximum
+[PROFILER] Completed: Loading audio samples in 00:01.970
+
+[3/4] Synthesizing master audio...
+
+[PROFILER] Starting: Synthesizing master audio
+[PROFILER] Memory � Before Synthesizing master audio: 127 MB used / 3916 JVM maximum
+[AUDIO] Master duration: 23.272s
+[AUDIO] Total samples: 1165056
+[AUDIO] Chunk duration: 10 s
+[AUDIO] Samples per chunk: 480000
+
+[AUDIO] Pass 1/2: calculating global peak...
+[AUDIO] Peak analysis � chunk 1/3
+[AUDIO] Peak analysis � chunk 2/3
+[AUDIO] Peak analysis � chunk 3/3
+[AUDIO] Global peak: 0.48352218
+[AUDIO] Normalization scale: 1.0
+
+[AUDIO] Pass 2/2: writing normalized WAV...
+[AUDIO] WAV writing � chunk 1/3
+[AUDIO] WAV writing � chunk 2/3
+[AUDIO] WAV writing � chunk 3/3
+[AUDIO] Audio synthesis completed.
+[AUDIO] Output: .\FL-vSampler\render_cache\master_audio.wav
+[PROFILER] Memory � After Synthesizing master audio: 137 MB used / 3916 JVM maximum
+[PROFILER] Completed: Synthesizing master audio in 00:00.080
+
+[4/4] Rendering final MP4...
+[CONFIG] Frame cache limit: 512 MB
+[CONFIG] Audio chunk size: 10 seconds
+[CONFIG] Video FPS: 60
+[CONFIG] Video workers: auto
+[CONFIG] Video chunk frames: 12
+
+[PROFILER] Starting: Rendering and encoding final MP4
+[PROFILER] Memory � Before Rendering and encoding final MP4: 137 MB used / 3916 JVM maximum
+[VIDEO] Tracks detected: 2 -> outer layout 2x1
+[VIDEO] Analyzing frame demand per sample...
+[PREFETCH] Extracting frames from 29 sample(s) using 8 thread(s)...
+[PREFETCH] pause.mp4: 8 frame(s) extracted
+[PREFETCH] A#3.mp4: 73 frame(s) extracted
+[PREFETCH] D#3.mp4: 72 frame(s) extracted
+[PREFETCH] G3.mp4: 94 frame(s) extracted
+[PREFETCH] F#3.mp4: 95 frame(s) extracted
+[PREFETCH] D4.mp4: 51 frame(s) extracted
+[PREFETCH] G4.mp4: 94 frame(s) extracted
+[PREFETCH] F3.mp4: 94 frame(s) extracted
+[PREFETCH] D#4.mp4: 94 frame(s) extracted
+[PREFETCH] A#4.mp4: 22 frame(s) extracted
+[PREFETCH] D5.mp4: 24 frame(s) extracted
+[PREFETCH] A5.mp4: 18 frame(s) extracted
+[PREFETCH] A#5.mp4: 18 frame(s) extracted
+[PREFETCH] G5.mp4: 94 frame(s) extracted
+[PREFETCH] F5.mp4: 29 frame(s) extracted
+[PREFETCH] F4.mp4: 51 frame(s) extracted
+[PREFETCH] A3.mp4: 94 frame(s) extracted
+[PREFETCH] A4.mp4: 51 frame(s) extracted
+[PREFETCH] G#4.mp4: 11 frame(s) extracted
+[PREFETCH] C#5.mp4: 13 frame(s) extracted
+[PREFETCH] C6.mp4: 13 frame(s) extracted
+[PREFETCH] D#5.mp4: 18 frame(s) extracted
+[PREFETCH] C5.mp4: 40 frame(s) extracted
+[PREFETCH] C4.mp4: 95 frame(s) extracted
+[PREFETCH] D6.mp4: 78 frame(s) extracted
+[PREFETCH] E5.mp4: 21 frame(s) extracted
+[PREFETCH] F#4.mp4: 95 frame(s) extracted
+[PREFETCH] F#5.mp4: 22 frame(s) extracted
+[PREFETCH] D3.mp4: 95 frame(s) extracted
+[PREFETCH] Done. Frames=1577 | RAM=92.67/512.00 MB | Hits=0 | Misses=0 | Evictions=0
+[VIDEO] Reference sample: F3.mp4 � output resolution set to 720x1280.
+[ENCODER] Probing h264_amf... OK
+[ENCODER] Using hardware encoder: h264_amf
+[VIDEO] Streaming 1397 frames at 720x1280.
+[VIDEO] Parallel mode: 8 worker(s), 12 frame(s)/chunk, 117 chunk(s).
+[FRAME CACHE] Initial: Frames=1577 | RAM=92.67/512.00 MB | Hits=2 | Misses=0 | Evictions=0
+ffmpeg version 8.1-full_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers
+  built with gcc 15.2.0 (Rev11, Built by MSYS2 project)
+  configuration: --enable-gpl --enable-version3 --enable-shared --disable-w32threads --disable-autodetect --enable-cairo --enable-fontconfig --enable-iconv --enable-gnutls --enable-lcms2 --enable-libxml2 --enable-gmp --enable-bzlib --enable-lzma --enable-libsnappy --enable-zlib --enable-librist --enable-libsrt --enable-libssh --enable-libzmq --enable-avisynth --enable-libbluray --enable-libcaca --enable-libdvdnav --enable-libdvdread --enable-sdl2 --enable-libaribb24 --enable-libaribcaption --enable-libdav1d --enable-libdavs2 --enable-libopenjpeg --enable-libquirc --enable-libuavs3d --enable-libxevd --enable-libzvbi --enable-liboapv --enable-libqrencode --enable-librav1e --enable-libsvtav1 --enable-libvvenc --enable-libwebp --enable-libx264 --enable-libx265 --enable-libxavs2 --enable-libxeve --enable-libxvid --enable-libaom --enable-libjxl --enable-libsvtjpegxs --enable-libvpx --enable-mediafoundation --enable-libass --enable-frei0r --enable-libfreetype --enable-libfribidi --enable-libharfbuzz --enable-liblensfun --enable-libvidstab --enable-libvmaf --enable-libzimg --enable-amf --enable-cuda-llvm --enable-cuvid --enable-dxva2 --enable-d3d11va --enable-d3d12va --enable-ffnvcodec --enable-libvpl --enable-nvdec --enable-nvenc --enable-vaapi --enable-libshaderc --enable-vulkan --enable-libplacebo --enable-opencl --enable-libcdio --enable-openal --enable-libgme --enable-libmodplug --enable-libopenmpt --enable-libopencore-amrwb --enable-libmp3lame --enable-libshine --enable-libtheora --enable-libtwolame --enable-libvo-amrwbenc --enable-libcodec2 --enable-libilbc --enable-libgsm --enable-liblc3 --enable-libopencore-amrnb --enable-libopus --enable-libspeex --enable-libvorbis --enable-ladspa --enable-libbs2b --enable-libflite --enable-libmysofa --enable-librubberband --enable-libsoxr --enable-chromaprint --enable-whisper
+  libavutil      60. 26.100 / 60. 26.100
+  libavcodec     62. 28.100 / 62. 28.100
+  libavformat    62. 12.100 / 62. 12.100
+  libavdevice    62.  3.100 / 62.  3.100
+  libavfilter    11. 14.100 / 11. 14.100
+  libswscale      9.  5.100 /  9.  5.100
+  libswresample   6.  3.100 /  6.  3.100
+Input #0, rawvideo, from 'pipe:0':
+  Duration: N/A, start: 0.000000, bitrate: 1327104 kb/s
+  Stream #0:0: Video: rawvideo (BGR[24] / 0x18524742), bgr24, 720x1280, 1327104 kb/s, 60 tbr, 60 tbn
+[aist#1:0/pcm_s16le @ 000001bab9b99540] Guessed Channel Layout: stereo
+Input #1, wav, from '.\FL-vSampler\render_cache\master_audio.wav':
+  Duration: 00:00:24.27, bitrate: 1536 kb/s
+  Stream #1:0: Audio: pcm_s16le ([1][0][0][0] / 0x0001), 48000 Hz, stereo, s16, 1536 kb/s
+Stream mapping:
+  Stream #0:0 -> #0:0 (rawvideo (native) -> h264 (h264_amf))
+  Stream #1:0 -> #0:1 (pcm_s16le (native) -> aac (native))
+[h264_amf @ 000001baba06b380] VBAQ is not supported by cqp Rate Control Method, automatically disabled
+Output #0, mp4, to '.\FL-vSampler\output.mp4':
+  Metadata:
+    encoder         : Lavf62.12.100
+  Stream #0:0: Video: h264 (avc1 / 0x31637661), yuv420p(tv, progressive), 720x1280, q=2-31, 60 fps, 15360 tbn
+    Metadata:
+      encoder         : Lavc62.28.100 h264_amf
+  Stream #0:1: Audio: aac (LC) (mp4a / 0x6134706D), 48000 Hz, stereo, fltp, 192 kb/s
+    Metadata:
+      encoder         : Lavc62.28.100 aac
+frame=  968 fps=125 q=-0.0 size=    5888KiB time=00:00:16.11 bitrate=2992.9kbits/s speed=2.08x elapsed=0:00:07.73
+[VIDEO] Frame 1008 / 1397
+[PROFILER] Memory � Video rendering: 763 MB used / 3916 JVM maximum
+[FRAME CACHE] Frames=1577 | RAM=92.67/512.00 MB | Hits=3307 | Misses=0 | Evictions=0
+[out#0/mp4 @ 000001bab9b97e00] video:8567KiB audio:545KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: 0.295522%
+frame= 1397 fps=116 q=-0.0 Lsize=    9139KiB time=00:00:23.26 bitrate=3217.8kbits/s speed=1.94x elapsed=0:00:11.99
+[aac @ 000001baba0a3280] Qavg: 550.178
+
+[FRAME CACHE] Final: Frames=1577 | RAM=92.67/512.00 MB | Hits=4840 | Misses=0 | Evictions=0
+[PROFILER] Memory � After Rendering and encoding final MP4: 1449 MB used / 3916 JVM maximum
+[PROFILER] Completed: Rendering and encoding final MP4 in 00:15.358
+
+[CLEANUP] Removing temporary files...
+[CLEANUP] Temporary files removed.
+
+=== PROCESSING COMPLETED SUCCESSFULLY ===
+Output: .\FL-vSampler\output.mp4

@@ -1,0 +1,601 @@
+=== MIDI VIDEO SAMPLER ===
+
+[1/4] Reading MIDI...
+[MIDI] Found 588 notes using 34 unique pitches across 4 MIDI track(s).
+[MIDI] Audio timeline events: 706
+[VIDEO] Video timeline created with 1174 segment(s) across 4 track(s) (max simultaneous notes within a single track: 1).
+
+[2/4] Loading audio samples...
+
+[PROFILER] Starting: Loading audio samples
+[PROFILER] Memory � Before Loading audio samples: 10 MB used / 3916 JVM maximum
+[AUDIO] Loading: F4.mp4
+[AUDIO] Loading: D4.mp4
+[AUDIO] Loading: C#5.mp4
+[AUDIO] Loading: D5.mp4
+[AUDIO] Loading: A4.mp4
+[AUDIO] Loading: A5.mp4
+[AUDIO] Loading: A#5.mp4
+[AUDIO] Loading: G4.mp4
+[AUDIO] Loading: E4.mp4
+[AUDIO] Loading: C6.mp4
+[AUDIO] Loading: D6.mp4
+[AUDIO] Loading: G5.mp4
+[AUDIO] Loading: E5.mp4
+[AUDIO] Loading: F5.mp4
+[WARNING] Missing sample for note F6: .\FL-vSampler\samples\F6.mp4
+[AUDIO] Loading: C#6.mp4
+[AUDIO] Loading: C4.mp4
+[AUDIO] Loading: C5.mp4
+[AUDIO] Loading: B5.mp4
+[AUDIO] Loading: G#5.mp4
+[AUDIO] Loading: D#6.mp4
+[AUDIO] Loading: D#5.mp4
+[WARNING] Missing sample for note E6: .\FL-vSampler\samples\E6.mp4
+[AUDIO] Loading: A#4.mp4
+[WARNING] Missing sample for note F#6: .\FL-vSampler\samples\F#6.mp4
+[AUDIO] Loading: F#5.mp4
+[WARNING] Missing sample for note G6: .\FL-vSampler\samples\G6.mp4
+[AUDIO] Loading: B4.mp4
+[WARNING] Missing sample for note G#6: .\FL-vSampler\samples\G#6.mp4
+[WARNING] Missing sample for note A6: .\FL-vSampler\samples\A6.mp4
+[AUDIO] Loading: C#4.mp4
+[AUDIO] Loading: D#4.mp4
+[AUDIO] Loading: G#4.mp4
+[AUDIO] Loading: B3.mp4
+[AUDIO] Loading pause sample...
+[PROFILER] Memory � After Loading audio samples: 126 MB used / 3916 JVM maximum
+[PROFILER] Completed: Loading audio samples in 00:02.554
+
+[3/4] Synthesizing master audio...
+
+[PROFILER] Starting: Synthesizing master audio
+[PROFILER] Memory � Before Synthesizing master audio: 127 MB used / 3916 JVM maximum
+[AUDIO] Master duration: 205.711s
+[AUDIO] Total samples: 9922128
+[AUDIO] Chunk duration: 10 s
+[AUDIO] Samples per chunk: 480000
+
+[AUDIO] Pass 1/2: calculating global peak...
+[AUDIO] Peak analysis � chunk 1/21
+[AUDIO] Peak analysis � chunk 2/21
+[AUDIO] Peak analysis � chunk 3/21
+[AUDIO] Peak analysis � chunk 4/21
+[AUDIO] Peak analysis � chunk 5/21
+[AUDIO] Peak analysis � chunk 6/21
+[AUDIO] Peak analysis � chunk 7/21
+[AUDIO] Peak analysis � chunk 8/21
+[AUDIO] Peak analysis � chunk 9/21
+[AUDIO] Peak analysis � chunk 10/21
+[AUDIO] Peak analysis � chunk 11/21
+[AUDIO] Peak analysis � chunk 12/21
+[AUDIO] Peak analysis � chunk 13/21
+[AUDIO] Peak analysis � chunk 14/21
+[AUDIO] Peak analysis � chunk 15/21
+[AUDIO] Peak analysis � chunk 16/21
+[AUDIO] Peak analysis � chunk 17/21
+[AUDIO] Peak analysis � chunk 18/21
+[AUDIO] Peak analysis � chunk 19/21
+[AUDIO] Peak analysis � chunk 20/21
+[AUDIO] Peak analysis � chunk 21/21
+[AUDIO] Global peak: 0.39120173
+[AUDIO] Normalization scale: 1.0
+
+[AUDIO] Pass 2/2: writing normalized WAV...
+[AUDIO] WAV writing � chunk 1/21
+[AUDIO] WAV writing � chunk 2/21
+[AUDIO] WAV writing � chunk 3/21
+[AUDIO] WAV writing � chunk 4/21
+[AUDIO] WAV writing � chunk 5/21
+[AUDIO] WAV writing � chunk 6/21
+[AUDIO] WAV writing � chunk 7/21
+[AUDIO] WAV writing � chunk 8/21
+[AUDIO] WAV writing � chunk 9/21
+[AUDIO] WAV writing � chunk 10/21
+[AUDIO] WAV writing � chunk 11/21
+[AUDIO] WAV writing � chunk 12/21
+[AUDIO] WAV writing � chunk 13/21
+[AUDIO] WAV writing � chunk 14/21
+[AUDIO] WAV writing � chunk 15/21
+[AUDIO] WAV writing � chunk 16/21
+[AUDIO] WAV writing � chunk 17/21
+[AUDIO] WAV writing � chunk 18/21
+[AUDIO] WAV writing � chunk 19/21
+[AUDIO] WAV writing � chunk 20/21
+[AUDIO] WAV writing � chunk 21/21
+[AUDIO] Audio synthesis completed.
+[AUDIO] Output: .\FL-vSampler\render_cache\master_audio.wav
+[PROFILER] Memory � After Synthesizing master audio: 174 MB used / 3916 JVM maximum
+[PROFILER] Completed: Synthesizing master audio in 00:00.240
+
+[4/4] Rendering final MP4...
+[CONFIG] Frame cache limit: 512 MB
+[CONFIG] Audio chunk size: 10 seconds
+[CONFIG] Video FPS: 60
+[CONFIG] Video workers: auto
+[CONFIG] Video chunk frames: 12
+
+[PROFILER] Starting: Rendering and encoding final MP4
+[PROFILER] Memory � Before Rendering and encoding final MP4: 174 MB used / 3916 JVM maximum
+[VIDEO] Tracks detected: 4 -> outer layout 2x2
+[VIDEO] Analyzing frame demand per sample...
+[PREFETCH] Extracting frames from 29 sample(s) using 8 thread(s)...
+[PREFETCH] pause.mp4: 8 frame(s) extracted
+[PREFETCH] F4.mp4: 110 frame(s) extracted
+[PREFETCH] C#5.mp4: 110 frame(s) extracted
+[PREFETCH] A5.mp4: 144 frame(s) extracted
+[PREFETCH] A#5.mp4: 144 frame(s) extracted
+[PREFETCH] D5.mp4: 418 frame(s) extracted
+[PREFETCH] D4.mp4: 418 frame(s) extracted
+[PREFETCH] A4.mp4: 482 frame(s) extracted
+[PREFETCH] E4.mp4: 110 frame(s) extracted
+[PREFETCH] C6.mp4: 144 frame(s) extracted
+[PREFETCH] G5.mp4: 179 frame(s) extracted
+[PREFETCH] G4.mp4: 419 frame(s) extracted
+[PREFETCH] E5.mp4: 144 frame(s) extracted
+[PREFETCH] C4.mp4: 110 frame(s) extracted
+[PREFETCH] C#6.mp4: 144 frame(s) extracted
+[PREFETCH] D6.mp4: 419 frame(s) extracted
+[PREFETCH] G#5.mp4: 75 frame(s) extracted
+[PREFETCH] F5.mp4: 316 frame(s) extracted
+[PREFETCH] B5.mp4: 110 frame(s) extracted
+[PREFETCH] C5.mp4: 179 frame(s) extracted
+[PREFETCH] D#6.mp4: 144 frame(s) extracted
+[PREFETCH] D#5.mp4: 110 frame(s) extracted
+[PREFETCH] B4.mp4: 110 frame(s) extracted
+[PREFETCH] D#4.mp4: 41 frame(s) extracted
+[PREFETCH] C#4.mp4: 110 frame(s) extracted
+[PREFETCH] G#4.mp4: 110 frame(s) extracted
+[PREFETCH] F#5.mp4: 418 frame(s) extracted
+[PREFETCH] A#4.mp4: 419 frame(s) extracted
+[PREFETCH] B3.mp4: 110 frame(s) extracted
+[PREFETCH] Done. Frames=5755 | RAM=350.27/512.00 MB | Hits=0 | Misses=0 | Evictions=0
+[VIDEO] Reference sample: F4.mp4 � output resolution set to 720x1280.
+[ENCODER] Probing h264_amf... OK
+[ENCODER] Using hardware encoder: h264_amf
+[VIDEO] Streaming 12343 frames at 720x1280.
+[VIDEO] Parallel mode: 8 worker(s), 12 frame(s)/chunk, 1029 chunk(s).
+[FRAME CACHE] Initial: Frames=5755 | RAM=350.27/512.00 MB | Hits=2 | Misses=0 | Evictions=0
+ffmpeg version 8.1-full_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers
+  built with gcc 15.2.0 (Rev11, Built by MSYS2 project)
+  configuration: --enable-gpl --enable-version3 --enable-shared --disable-w32threads --disable-autodetect --enable-cairo --enable-fontconfig --enable-iconv --enable-gnutls --enable-lcms2 --enable-libxml2 --enable-gmp --enable-bzlib --enable-lzma --enable-libsnappy --enable-zlib --enable-librist --enable-libsrt --enable-libssh --enable-libzmq --enable-avisynth --enable-libbluray --enable-libcaca --enable-libdvdnav --enable-libdvdread --enable-sdl2 --enable-libaribb24 --enable-libaribcaption --enable-libdav1d --enable-libdavs2 --enable-libopenjpeg --enable-libquirc --enable-libuavs3d --enable-libxevd --enable-libzvbi --enable-liboapv --enable-libqrencode --enable-librav1e --enable-libsvtav1 --enable-libvvenc --enable-libwebp --enable-libx264 --enable-libx265 --enable-libxavs2 --enable-libxeve --enable-libxvid --enable-libaom --enable-libjxl --enable-libsvtjpegxs --enable-libvpx --enable-mediafoundation --enable-libass --enable-frei0r --enable-libfreetype --enable-libfribidi --enable-libharfbuzz --enable-liblensfun --enable-libvidstab --enable-libvmaf --enable-libzimg --enable-amf --enable-cuda-llvm --enable-cuvid --enable-dxva2 --enable-d3d11va --enable-d3d12va --enable-ffnvcodec --enable-libvpl --enable-nvdec --enable-nvenc --enable-vaapi --enable-libshaderc --enable-vulkan --enable-libplacebo --enable-opencl --enable-libcdio --enable-openal --enable-libgme --enable-libmodplug --enable-libopenmpt --enable-libopencore-amrwb --enable-libmp3lame --enable-libshine --enable-libtheora --enable-libtwolame --enable-libvo-amrwbenc --enable-libcodec2 --enable-libilbc --enable-libgsm --enable-liblc3 --enable-libopencore-amrnb --enable-libopus --enable-libspeex --enable-libvorbis --enable-ladspa --enable-libbs2b --enable-libflite --enable-libmysofa --enable-librubberband --enable-libsoxr --enable-chromaprint --enable-whisper
+  libavutil      60. 26.100 / 60. 26.100
+  libavcodec     62. 28.100 / 62. 28.100
+  libavformat    62. 12.100 / 62. 12.100
+  libavdevice    62.  3.100 / 62.  3.100
+  libavfilter    11. 14.100 / 11. 14.100
+  libswscale      9.  5.100 /  9.  5.100
+  libswresample   6.  3.100 /  6.  3.100
+Input #0, rawvideo, from 'pipe:0':
+  Duration: N/A, start: 0.000000, bitrate: 1327104 kb/s
+  Stream #0:0: Video: rawvideo (BGR[24] / 0x18524742), bgr24, 720x1280, 1327104 kb/s, 60 tbr, 60 tbn
+[aist#1:0/pcm_s16le @ 0000023ad83b9540] Guessed Channel Layout: stereo
+Input #1, wav, from '.\FL-vSampler\render_cache\master_audio.wav':
+  Duration: 00:03:26.71, bitrate: 1536 kb/s
+  Stream #1:0: Audio: pcm_s16le ([1][0][0][0] / 0x0001), 48000 Hz, stereo, s16, 1536 kb/s
+Stream mapping:
+  Stream #0:0 -> #0:0 (rawvideo (native) -> h264 (h264_amf))
+  Stream #1:0 -> #0:1 (pcm_s16le (native) -> aac (native))
+[h264_amf @ 0000023ad9feb380] VBAQ is not supported by cqp Rate Control Method, automatically disabled
+Output #0, mp4, to '.\FL-vSampler\output.mp4':
+  Metadata:
+    encoder         : Lavf62.12.100
+  Stream #0:0: Video: h264 (avc1 / 0x31637661), yuv420p(tv, progressive), 720x1280, q=2-31, 60 fps, 15360 tbn
+    Metadata:
+      encoder         : Lavc62.28.100 h264_amf
+  Stream #0:1: Audio: aac (LC) (mp4a / 0x6134706D), 48000 Hz, stereo, fltp, 192 kb/s
+    Metadata:
+      encoder         : Lavc62.28.100 aac
+frame=  984 fps=136 q=-0.0 size=    4864KiB time=00:00:16.38 bitrate=2432.1kbits/s speed=2.26x elapsed=0:00:07.24
+[VIDEO] Frame 1008 / 12343
+[PROFILER] Memory � Video rendering: 1143 MB used / 3916 JVM maximum
+[FRAME CACHE] Frames=5755 | RAM=350.27/512.00 MB | Hits=2206 | Misses=0 | Evictions=0
+frame= 1991 fps=120 q=-0.0 size=   11520KiB time=00:00:33.16 bitrate=2845.4kbits/s speed=2.01x elapsed=0:00:16.52
+[VIDEO] Frame 2004 / 12343
+[PROFILER] Memory � Video rendering: 1518 MB used / 3916 JVM maximum
+[FRAME CACHE] Frames=5755 | RAM=350.27/512.00 MB | Hits=4959 | Misses=0 | Evictions=0
+frame= 2968 fps=122 q=-0.0 size=   17664KiB time=00:00:49.45 bitrate=2926.3kbits/s speed=2.04x elapsed=0:00:24.25
+[VIDEO] Frame 3000 / 12343
+[PROFILER] Memory � Video rendering: 1781 MB used / 3916 JVM maximum
+[FRAME CACHE] Frames=5755 | RAM=350.27/512.00 MB | Hits=7378 | Misses=0 | Evictions=0
+frame= 3983 fps=121 q=-0.0 size=   25088KiB time=00:01:06.36 bitrate=3096.8kbits/s speed=2.01x elapsed=0:00:33.03
+[VIDEO] Frame 4008 / 12343
+[PROFILER] Memory � Video rendering: 1013 MB used / 3916 JVM maximum
+[FRAME CACHE] Frames=5755 | RAM=350.27/512.00 MB | Hits=10593 | Misses=0 | Evictions=0
+frame= 4967 fps=119 q=-0.0 size=   32256KiB time=00:01:22.76 bitrate=3192.6kbits/s speed=1.98x elapsed=0:00:41.79
+[VIDEO] Frame 5004 / 12343
+[PROFILER] Memory � Video rendering: 1860 MB used / 3916 JVM maximum
+[FRAME CACHE] Frames=5755 | RAM=350.27/512.00 MB | Hits=13857 | Misses=0 | Evictions=0
+frame= 5997 fps=116 q=-0.0 size=   39168KiB time=00:01:39.93 bitrate=3210.8kbits/s speed=1.94x elapsed=0:00:51.59
+[VIDEO] Frame 6000 / 12343
+[PROFILER] Memory � Video rendering: 1906 MB used / 3916 JVM maximum
+[FRAME CACHE] Frames=5755 | RAM=350.27/512.00 MB | Hits=16912 | Misses=0 | Evictions=0
+frame= 6983 fps=115 q=-0.0 size=   47104KiB time=00:01:56.36 bitrate=3316.0kbits/s speed=1.91x elapsed=0:01:00.87
+[VIDEO] Frame 7008 / 12343
+[PROFILER] Memory � Video rendering: 1926 MB used / 3916 JVM maximum
+[FRAME CACHE] Frames=5755 | RAM=350.27/512.00 MB | Hits=20526 | Misses=0 | Evictions=0
+frame= 7955 fps=113 q=-0.0 size=   54016KiB time=00:02:12.56 bitrate=3337.9kbits/s speed=1.88x elapsed=0:01:10.66
+[VIDEO] Frame 8004 / 12343
+[PROFILER] Memory � Video rendering: 1321 MB used / 3916 JVM maximum
+[FRAME CACHE] Frames=5755 | RAM=350.27/512.00 MB | Hits=23980 | Misses=0 | Evictions=0
+frame= 8975 fps=112 q=-0.0 size=   61952KiB time=00:02:29.56 bitrate=3393.2kbits/s speed=1.86x elapsed=0:01:20.46
+[VIDEO] Frame 9000 / 12343
+[PROFILER] Memory � Video rendering: 1624 MB used / 3916 JVM maximum
+[FRAME CACHE] Frames=5755 | RAM=350.27/512.00 MB | Hits=27325 | Misses=0 | Evictions=0
+frame= 9935 fps=111 q=-0.0 size=   68352KiB time=00:02:45.56 bitrate=3382.0kbits/s speed=1.86x elapsed=0:01:29.23
+[VIDEO] Frame 10008 / 12343
+[PROFILER] Memory � Video rendering: 1262 MB used / 3916 JVM maximum
+[FRAME CACHE] Frames=5755 | RAM=350.27/512.00 MB | Hits=30248 | Misses=0 | Evictions=0
+[mjpeg @ 0000017e627b23c0] Non full-range YUV is non-standard, set strict_std_compliance to at most unofficial to use it.
+[mjpeg @ 0000017e60cd9740] ff_frame_thread_encoder_init failed
+[vost#0:0/mjpeg @ 0000017e6082a240] [enc:mjpeg @ 0000017e607950c0] Error while opening encoder - maybe incorrect parameters such as bit_rate, rate, width or height.
+[vf#0:0 @ 0000017e60cd9ac0] Error sending frames to consumers: Invalid argument
+[vf#0:0 @ 0000017e60cd9ac0] Task finished with error code: -22 (Invalid argument)
+[vf#0:0 @ 0000017e60cd9ac0] Terminating thread with return code -22 (Invalid argument)
+[vost#0:0/mjpeg @ 0000017e6082a240] [enc:mjpeg @ 0000017e607950c0] Could not open encoder before EOF
+[vost#0:0/mjpeg @ 0000017e6082a240] Task finished with error code: -22 (Invalid argument)
+[vost#0:0/mjpeg @ 0000017e6082a240] Terminating thread with return code -22 (Invalid argument)
+[out#0/mjpeg @ 0000017e6083dd00] Nothing was written into output file, because at least one of its streams received no packets.
+[VIDEO] WARNING: frame 488 from A4.mp4 unavailable (FFmpeg failed to extract frame 488 from A4.mp4.). Using fallback.
+[mjpeg @ 00000272193bdb80] Non full-range YUV is non-standard, set strict_std_compliance to at most unofficial to use it.
+[mjpeg @ 0000027218129740] ff_frame_thread_encoder_init failed
+[vost#0:0/mjpeg @ 0000027217bba240] [enc:mjpeg @ 0000027217b24f40] Error while opening encoder - maybe incorrect parameters such as bit_rate, rate, width or height.
+[vf#0:0 @ 0000027218129ac0] Error sending frames to consumers: Invalid argument
+[vf#0:0 @ 0000027218129ac0] Task finished with error code: -22 (Invalid argument)
+[vf#0:0 @ 0000027218129ac0] Terminating thread with return code -22 (Invalid argument)
+[vost#0:0/mjpeg @ 0000027217bba240] [enc:mjpeg @ 0000027217b24f40] Could not open encoder before EOF
+[vost#0:0/mjpeg @ 0000027217bba240] Task finished with error code: -22 (Invalid argument)
+[vost#0:0/mjpeg @ 0000027217bba240] Terminating thread with return code -22 (Invalid argument)
+[mjpeg @ 000001d8e16f7900] Non full-range YUV is non-standard, set strict_std_compliance to at most unofficial to use it.
+[mjpeg @ 000001d8dea49740] ff_frame_thread_encoder_init failed
+[vost#0:0/mjpeg @ 000001d8de43a240] [enc:mjpeg @ 000001d8de3a5540] Error while opening encoder - maybe incorrect parameters such as bit_rate, rate, width or height.
+[vf#0:0 @ 000001d8dea49ac0] Error sending frames to consumers: Invalid argument
+[out#0/mjpeg @ 0000027217bce140] Nothing was written into output file, because at least one of its streams received no packets.
+[vf#0:0 @ 000001d8dea49ac0] Task finished with error code: -22 (Invalid argument)
+[vf#0:0 @ 000001d8dea49ac0] Terminating thread with return code -22 (Invalid argument)
+[vost#0:0/mjpeg @ 000001d8de43a240] [enc:mjpeg @ 000001d8de3a5540] Could not open encoder before EOF
+[vost#0:0/mjpeg @ 000001d8de43a240] Task finished with error code: -22 (Invalid argument)
+[vost#0:0/mjpeg @ 000001d8de43a240] Terminating thread with return code -22 (Invalid argument)
+[out#0/mjpeg @ 000001d8de44e140] Nothing was written into output file, because at least one of its streams received no packets.
+[VIDEO] WARNING: frame 500 from A4.mp4 unavailable (FFmpeg failed to extract frame 500 from A4.mp4.). Using fallback.
+[VIDEO] WARNING: frame 512 from A4.mp4 unavailable (FFmpeg failed to extract frame 512 from A4.mp4.). Using fallback.
+[mjpeg @ 000001c24a2bac00] Non full-range YUV is non-standard, set strict_std_compliance to at most unofficial to use it.
+[mjpeg @ 000001c248d89740] ff_frame_thread_encoder_init failed
+[vost#0:0/mjpeg @ 000001c24879a240] [enc:mjpeg @ 000001c248705540] Error while opening encoder - maybe incorrect parameters such as bit_rate, rate, width or height.
+[vf#0:0 @ 000001c248d89ac0] Error sending frames to consumers: Invalid argument
+[vf#0:0 @ 000001c248d89ac0] Task finished with error code: -22 (Invalid argument)
+[vf#0:0 @ 000001c248d89ac0] Terminating thread with return code -22 (Invalid argument)
+[vost#0:0/mjpeg @ 000001c24879a240] [enc:mjpeg @ 000001c248705540] Could not open encoder before EOF
+[vost#0:0/mjpeg @ 000001c24879a240] Task finished with error code: -22 (Invalid argument)
+[vost#0:0/mjpeg @ 000001c24879a240] Terminating thread with return code -22 (Invalid argument)
+[out#0/mjpeg @ 000001c2487ad8c0] Nothing was written into output file, because at least one of its streams received no packets.
+[VIDEO] WARNING: frame 489 from A4.mp4 unavailable (FFmpeg failed to extract frame 489 from A4.mp4.). Using fallback.
+[mjpeg @ 000001ed77f16000] Non full-range YUV is non-standard, set strict_std_compliance to at most unofficial to use it.
+[mjpeg @ 000001ed77209740] ff_frame_thread_encoder_init failed
+[vost#0:0/mjpeg @ 000001ed76dba240] [enc:mjpeg @ 000001ed76d229c0] Error while opening encoder - maybe incorrect parameters such as bit_rate, rate, width or height.
+[vf#0:0 @ 000001ed77209ac0] Error sending frames to consumers: Invalid argument
+[vf#0:0 @ 000001ed77209ac0] Task finished with error code: -22 (Invalid argument)
+[vf#0:0 @ 000001ed77209ac0] Terminating thread with return code -22 (Invalid argument)
+[vost#0:0/mjpeg @ 000001ed76dba240] [enc:mjpeg @ 000001ed76d229c0] Could not open encoder before EOF
+[vost#0:0/mjpeg @ 000001ed76dba240] Task finished with error code: -22 (Invalid argument)
+[vost#0:0/mjpeg @ 000001ed76dba240] Terminating thread with return code -22 (Invalid argument)
+[out#0/mjpeg @ 000001ed76dcdf00] Nothing was written into output file, because at least one of its streams received no packets.
+[VIDEO] WARNING: frame 501 from A4.mp4 unavailable (FFmpeg failed to extract frame 501 from A4.mp4.). Using fallback.
+[mjpeg @ 0000017951731000] Non full-range YUV is non-standard, set strict_std_compliance to at most unofficial to use it.
+[mjpeg @ 000001794f459740] ff_frame_thread_encoder_init failed
+[vost#0:0/mjpeg @ 000001794ef4a240] [enc:mjpeg @ 000001794eeb5300] Error while opening encoder - maybe incorrect parameters such as bit_rate, rate, width or height.
+[vf#0:0 @ 000001794f459ac0] Error sending frames to consumers: Invalid argument
+[vf#0:0 @ 000001794f459ac0] Task finished with error code: -22 (Invalid argument)
+[vf#0:0 @ 000001794f459ac0] Terminating thread with return code -22 (Invalid argument)
+[vost#0:0/mjpeg @ 000001794ef4a240] [enc:mjpeg @ 000001794eeb5300] Could not open encoder before EOF
+[vost#0:0/mjpeg @ 000001794ef4a240] Task finished with error code: -22 (Invalid argument)
+[vost#0:0/mjpeg @ 000001794ef4a240] Terminating thread with return code -22 (Invalid argument)
+[out#0/mjpeg @ 000001794ef5de00] Nothing was written into output file, because at least one of its streams received no packets.
+[VIDEO] WARNING: frame 513 from A4.mp4 unavailable (FFmpeg failed to extract frame 513 from A4.mp4.). Using fallback.
+[mjpeg @ 0000012031c77cc0] Non full-range YUV is non-standard, set strict_std_compliance to at most unofficial to use it.
+[mjpeg @ 0000012031be9740] ff_frame_thread_encoder_init failed
+[vost#0:0/mjpeg @ 000001202fe4a240] [enc:mjpeg @ 000001202fdb56c0] Error while opening encoder - maybe incorrect parameters such as bit_rate, rate, width or height.
+[vf#0:0 @ 0000012031be9ac0] Error sending frames to consumers: Invalid argument
+[vf#0:0 @ 0000012031be9ac0] Task finished with error code: -22 (Invalid argument)
+[vf#0:0 @ 0000012031be9ac0] Terminating thread with return code -22 (Invalid argument)
+[vost#0:0/mjpeg @ 000001202fe4a240] [enc:mjpeg @ 000001202fdb56c0] Could not open encoder before EOF
+[vost#0:0/mjpeg @ 000001202fe4a240] Task finished with error code: -22 (Invalid argument)
+[vost#0:0/mjpeg @ 000001202fe4a240] Terminating thread with return code -22 (Invalid argument)
+[mjpeg @ 00000184bfdc1e40] Non full-range YUV is non-standard, set strict_std_compliance to at most unofficial to use it.
+[mjpeg @ 00000184bf359740] ff_frame_thread_encoder_init failed
+[vost#0:0/mjpeg @ 00000184bd5ea240] [enc:mjpeg @ 00000184bd554f40] Error while opening encoder - maybe incorrect parameters such as bit_rate, rate, width or height.
+[vf#0:0 @ 00000184bf359ac0] Error sending frames to consumers: Invalid argument
+[vf#0:0 @ 00000184bf359ac0] Task finished with error code: -22 (Invalid argument)
+[vf#0:0 @ 00000184bf359ac0] Terminating thread with return code -22 (Invalid argument)
+[vost#0:0/mjpeg @ 00000184bd5ea240] [enc:mjpeg @ 00000184bd554f40] Could not open encoder before EOF
+[vost#0:0/mjpeg @ 00000184bd5ea240] Task finished with error code: -22 (Invalid argument)
+[vost#0:0/mjpeg @ 00000184bd5ea240] Terminating thread with return code -22 (Invalid argument)
+[out#0/mjpeg @ 000001202fe5d8c0] Nothing was written into output file, because at least one of its streams received no packets.
+[out#0/mjpeg @ 00000184bd5fe440] Nothing was written into output file, because at least one of its streams received no packets.
+[VIDEO] WARNING: frame 490 from A4.mp4 unavailable (FFmpeg failed to extract frame 490 from A4.mp4.). Using fallback.
+[VIDEO] WARNING: frame 482 from A4.mp4 unavailable (FFmpeg failed to extract frame 482 from A4.mp4.). Using fallback.
+[mjpeg @ 0000022404f211c0] Non full-range YUV is non-standard, set strict_std_compliance to at most unofficial to use it.
+[mjpeg @ 00000224039f9740] ff_frame_thread_encoder_init failed
+[vost#0:0/mjpeg @ 000002240354a240] [enc:mjpeg @ 00000224034b50c0] Error while opening encoder - maybe incorrect parameters such as bit_rate, rate, width or height.
+[vf#0:0 @ 00000224039f9ac0] Error sending frames to consumers: Invalid argument
+[vf#0:0 @ 00000224039f9ac0] Task finished with error code: -22 (Invalid argument)
+[vf#0:0 @ 00000224039f9ac0] Terminating thread with return code -22 (Invalid argument)
+[vost#0:0/mjpeg @ 000002240354a240] [enc:mjpeg @ 00000224034b50c0] Could not open encoder before EOF
+[vost#0:0/mjpeg @ 000002240354a240] Task finished with error code: -22 (Invalid argument)
+[vost#0:0/mjpeg @ 000002240354a240] Terminating thread with return code -22 (Invalid argument)
+[out#0/mjpeg @ 000002240355e340] Nothing was written into output file, because at least one of its streams received no packets.
+[VIDEO] WARNING: frame 502 from A4.mp4 unavailable (FFmpeg failed to extract frame 502 from A4.mp4.). Using fallback.
+[mjpeg @ 0000018be6e75400] Non full-range YUV is non-standard, set strict_std_compliance to at most unofficial to use it.
+[mjpeg @ 0000018be6de9740] ff_frame_thread_encoder_init failed
+[vost#0:0/mjpeg @ 0000018be67ba240] [enc:mjpeg @ 0000018be6725480] Error while opening encoder - maybe incorrect parameters such as bit_rate, rate, width or height.
+[vf#0:0 @ 0000018be6de9ac0] Error sending frames to consumers: Invalid argument
+[mjpeg @ 000002340cdfd480] Non full-range YUV is non-standard, set strict_std_compliance to at most unofficial to use it.
+[mjpeg @ 000002340c0e9740] ff_frame_thread_encoder_init failed
+[vost#0:0/mjpeg @ 000002340bbca240] [enc:mjpeg @ 000002340bb34ac0] Error while opening encoder - maybe incorrect parameters such as bit_rate, rate, width or height.
+[vf#0:0 @ 000002340c0e9ac0] Error sending frames to consumers: Invalid argument
+[vf#0:0 @ 0000018be6de9ac0] Task finished with error code: -22 (Invalid argument)
+[vf#0:0 @ 0000018be6de9ac0] Terminating thread with return code -22 (Invalid argument)
+[vost#0:0/mjpeg @ 0000018be67ba240] [enc:mjpeg @ 0000018be6725480] Could not open encoder before EOF
+[vost#0:0/mjpeg @ 0000018be67ba240] Task finished with error code: -22 (Invalid argument)
+[vost#0:0/mjpeg @ 0000018be67ba240] Terminating thread with return code -22 (Invalid argument)
+[vf#0:0 @ 000002340c0e9ac0] Task finished with error code: -22 (Invalid argument)
+[vf#0:0 @ 000002340c0e9ac0] Terminating thread with return code -22 (Invalid argument)
+[vost#0:0/mjpeg @ 000002340bbca240] [enc:mjpeg @ 000002340bb34ac0] Could not open encoder before EOF
+[vost#0:0/mjpeg @ 000002340bbca240] Task finished with error code: -22 (Invalid argument)
+[vost#0:0/mjpeg @ 000002340bbca240] Terminating thread with return code -22 (Invalid argument)
+[out#0/mjpeg @ 0000018be67cd8c0] Nothing was written into output file, because at least one of its streams received no packets.
+[out#0/mjpeg @ 000002340bbdde00] Nothing was written into output file, because at least one of its streams received no packets.
+[VIDEO] WARNING: frame 483 from A4.mp4 unavailable (FFmpeg failed to extract frame 483 from A4.mp4.). Using fallback.
+[VIDEO] WARNING: frame 491 from A4.mp4 unavailable (FFmpeg failed to extract frame 491 from A4.mp4.). Using fallback.
+[mjpeg @ 0000022f470fd3c0] Non full-range YUV is non-standard, set strict_std_compliance to at most unofficial to use it.
+[mjpeg @ 0000022f46399740] ff_frame_thread_encoder_init failed
+[vost#0:0/mjpeg @ 0000022f446ba240] [enc:mjpeg @ 0000022f446250c0] Error while opening encoder - maybe incorrect parameters such as bit_rate, rate, width or height.
+[vf#0:0 @ 0000022f46399ac0] Error sending frames to consumers: Invalid argument
+[vf#0:0 @ 0000022f46399ac0] Task finished with error code: -22 (Invalid argument)
+[vf#0:0 @ 0000022f46399ac0] Terminating thread with return code -22 (Invalid argument)
+[vost#0:0/mjpeg @ 0000022f446ba240] [enc:mjpeg @ 0000022f446250c0] Could not open encoder before EOF
+[vost#0:0/mjpeg @ 0000022f446ba240] Task finished with error code: -22 (Invalid argument)
+[vost#0:0/mjpeg @ 0000022f446ba240] Terminating thread with return code -22 (Invalid argument)
+[out#0/mjpeg @ 0000022f446cdbc0] Nothing was written into output file, because at least one of its streams received no packets.
+[VIDEO] WARNING: frame 503 from A4.mp4 unavailable (FFmpeg failed to extract frame 503 from A4.mp4.). Using fallback.
+[mjpeg @ 00000212f28fbd80] Non full-range YUV is non-standard, set strict_std_compliance to at most unofficial to use it.
+[mjpeg @ 00000212f13c9740] ff_frame_thread_encoder_init failed
+[vost#0:0/mjpeg @ 00000212f0eaa240] [enc:mjpeg @ 00000212f0e14c40] Error while opening encoder - maybe incorrect parameters such as bit_rate, rate, width or height.
+[vf#0:0 @ 00000212f13c9ac0] Error sending frames to consumers: Invalid argument
+[vf#0:0 @ 00000212f13c9ac0] Task finished with error code: -22 (Invalid argument)
+[vf#0:0 @ 00000212f13c9ac0] Terminating thread with return code -22 (Invalid argument)
+[vost#0:0/mjpeg @ 00000212f0eaa240] [enc:mjpeg @ 00000212f0e14c40] Could not open encoder before EOF
+[vost#0:0/mjpeg @ 00000212f0eaa240] Task finished with error code: -22 (Invalid argument)
+[vost#0:0/mjpeg @ 00000212f0eaa240] Terminating thread with return code -22 (Invalid argument)
+[out#0/mjpeg @ 00000212f0ebdbc0] Nothing was written into output file, because at least one of its streams received no packets.
+[mjpeg @ 0000014e903f8f00] Non full-range YUV is non-standard, set strict_std_compliance to at most unofficial to use it.
+[mjpeg @ 0000014e8f6e9740] ff_frame_thread_encoder_init failed
+[vost#0:0/mjpeg @ 0000014e8f1ea240] [enc:mjpeg @ 0000014e8f155540] Error while opening encoder - maybe incorrect parameters such as bit_rate, rate, width or height.
+[vf#0:0 @ 0000014e8f6e9ac0] Error sending frames to consumers: Invalid argument
+[vf#0:0 @ 0000014e8f6e9ac0] Task finished with error code: -22 (Invalid argument)
+[vf#0:0 @ 0000014e8f6e9ac0] Terminating thread with return code -22 (Invalid argument)
+[vost#0:0/mjpeg @ 0000014e8f1ea240] [enc:mjpeg @ 0000014e8f155540] Could not open encoder before EOF
+[vost#0:0/mjpeg @ 0000014e8f1ea240] Task finished with error code: -22 (Invalid argument)
+[vost#0:0/mjpeg @ 0000014e8f1ea240] Terminating thread with return code -22 (Invalid argument)
+[out#0/mjpeg @ 0000014e8f1fd9c0] Nothing was written into output file, because at least one of its streams received no packets.
+frame=10967 fps=110 q=-0.0 size=   76032KiB time=00:03:02.76 bitrate=3407.9kbits/s speed=1.83x elapsed=0:01:40.05    [VIDEO] WARNING: frame 484 from A4.mp4 unavailable (FFmpeg failed to extract frame 484 from A4.mp4.). Using fallback.
+[VIDEO] WARNING: frame 492 from A4.mp4 unavailable (FFmpeg failed to extract frame 492 from A4.mp4.). Using fallback.
+[mjpeg @ 000002b0e01d8f00] Non full-range YUV is non-standard, set strict_std_compliance to at most unofficial to use it.
+[mjpeg @ 000002b0dff99740] ff_frame_thread_encoder_init failed
+[vost#0:0/mjpeg @ 000002b0df99a240] [enc:mjpeg @ 000002b0df905300] Error while opening encoder - maybe incorrect parameters such as bit_rate, rate, width or height.
+[vf#0:0 @ 000002b0dff99ac0] Error sending frames to consumers: Invalid argument
+[vf#0:0 @ 000002b0dff99ac0] Task finished with error code: -22 (Invalid argument)
+[vf#0:0 @ 000002b0dff99ac0] Terminating thread with return code -22 (Invalid argument)
+[vost#0:0/mjpeg @ 000002b0df99a240] [enc:mjpeg @ 000002b0df905300] Could not open encoder before EOF
+[vost#0:0/mjpeg @ 000002b0df99a240] Task finished with error code: -22 (Invalid argument)
+[vost#0:0/mjpeg @ 000002b0df99a240] Terminating thread with return code -22 (Invalid argument)
+[out#0/mjpeg @ 000002b0df9ae140] Nothing was written into output file, because at least one of its streams received no packets.
+[mjpeg @ 000002027c157ac0] Non full-range YUV is non-standard, set strict_std_compliance to at most unofficial to use it.
+[mjpeg @ 000002027c729740] ff_frame_thread_encoder_init failed
+[vost#0:0/mjpeg @ 000002027c15a240] [enc:mjpeg @ 000002027c0c2fc0] Error while opening encoder - maybe incorrect parameters such as bit_rate, rate, width or height.
+[vf#0:0 @ 000002027c729ac0] Error sending frames to consumers: Invalid argument
+[vf#0:0 @ 000002027c729ac0] Task finished with error code: -22 (Invalid argument)
+[vf#0:0 @ 000002027c729ac0] Terminating thread with return code -22 (Invalid argument)
+[vost#0:0/mjpeg @ 000002027c15a240] [enc:mjpeg @ 000002027c0c2fc0] Could not open encoder before EOF
+[vost#0:0/mjpeg @ 000002027c15a240] Task finished with error code: -22 (Invalid argument)
+[vost#0:0/mjpeg @ 000002027c15a240] Terminating thread with return code -22 (Invalid argument)
+[mjpeg @ 0000016750b24440] Non full-range YUV is non-standard, set strict_std_compliance to at most unofficial to use it.
+[mjpeg @ 000001674dac9740] ff_frame_thread_encoder_init failed
+[vost#0:0/mjpeg @ 000001674d49a240] [enc:mjpeg @ 000001674d405600] Error while opening encoder - maybe incorrect parameters such as bit_rate, rate, width or height.
+[vf#0:0 @ 000001674dac9ac0] Error sending frames to consumers: Invalid argument
+[vf#0:0 @ 000001674dac9ac0] Task finished with error code: -22 (Invalid argument)
+[vf#0:0 @ 000001674dac9ac0] Terminating thread with return code -22 (Invalid argument)
+[vost#0:0/mjpeg @ 000001674d49a240] [enc:mjpeg @ 000001674d405600] Could not open encoder before EOF
+[vost#0:0/mjpeg @ 000001674d49a240] Task finished with error code: -22 (Invalid argument)
+[vost#0:0/mjpeg @ 000001674d49a240] Terminating thread with return code -22 (Invalid argument)
+[out#0/mjpeg @ 000002027c16e240] Nothing was written into output file, because at least one of its streams received no packets.
+[out#0/mjpeg @ 000001674d4ae440] Nothing was written into output file, because at least one of its streams received no packets.
+[VIDEO] WARNING: frame 504 from A4.mp4 unavailable (FFmpeg failed to extract frame 504 from A4.mp4.). Using fallback.
+[VIDEO] WARNING: frame 493 from A4.mp4 unavailable (FFmpeg failed to extract frame 493 from A4.mp4.). Using fallback.
+[VIDEO] WARNING: frame 485 from A4.mp4 unavailable (FFmpeg failed to extract frame 485 from A4.mp4.). Using fallback.
+[mjpeg @ 000001b4c1979b00] Non full-range YUV is non-standard, set strict_std_compliance to at most unofficial to use it.
+[mjpeg @ 000001b4bf699740] ff_frame_thread_encoder_init failed
+[vost#0:0/mjpeg @ 000001b4bf15a240] [enc:mjpeg @ 000001b4bf0c5240] Error while opening encoder - maybe incorrect parameters such as bit_rate, rate, width or height.
+[vf#0:0 @ 000001b4bf699ac0] Error sending frames to consumers: Invalid argument
+[vf#0:0 @ 000001b4bf699ac0] Task finished with error code: -22 (Invalid argument)
+[vf#0:0 @ 000001b4bf699ac0] Terminating thread with return code -22 (Invalid argument)
+[vost#0:0/mjpeg @ 000001b4bf15a240] [enc:mjpeg @ 000001b4bf0c5240] Could not open encoder before EOF
+[vost#0:0/mjpeg @ 000001b4bf15a240] Task finished with error code: -22 (Invalid argument)
+[vost#0:0/mjpeg @ 000001b4bf15a240] Terminating thread with return code -22 (Invalid argument)
+[out#0/mjpeg @ 000001b4bf16e240] Nothing was written into output file, because at least one of its streams received no packets.
+[VIDEO] WARNING: frame 505 from A4.mp4 unavailable (FFmpeg failed to extract frame 505 from A4.mp4.). Using fallback.
+[mjpeg @ 0000018a810fff40] Non full-range YUV is non-standard, set strict_std_compliance to at most unofficial to use it.
+[mjpeg @ 0000018aff119740] ff_frame_thread_encoder_init failed
+[vost#0:0/mjpeg @ 0000018afebaa240] [enc:mjpeg @ 0000018afeb14d00] Error while opening encoder - maybe incorrect parameters such as bit_rate, rate, width or height.
+[vf#0:0 @ 0000018aff119ac0] Error sending frames to consumers: Invalid argument
+[vf#0:0 @ 0000018aff119ac0] Task finished with error code: -22 (Invalid argument)
+[vf#0:0 @ 0000018aff119ac0] Terminating thread with return code -22 (Invalid argument)
+[vost#0:0/mjpeg @ 0000018afebaa240] [enc:mjpeg @ 0000018afeb14d00] Could not open encoder before EOF
+[vost#0:0/mjpeg @ 0000018afebaa240] Task finished with error code: -22 (Invalid argument)
+[vost#0:0/mjpeg @ 0000018afebaa240] Terminating thread with return code -22 (Invalid argument)
+[mjpeg @ 000002b91b088e40] Non full-range YUV is non-standard, set strict_std_compliance to at most unofficial to use it.
+[mjpeg @ 000002b919df9740] ff_frame_thread_encoder_init failed
+[vost#0:0/mjpeg @ 000002b91813a240] [enc:mjpeg @ 000002b9180a50c0] Error while opening encoder - maybe incorrect parameters such as bit_rate, rate, width or height.
+[vf#0:0 @ 000002b919df9ac0] Error sending frames to consumers: Invalid argument
+[vf#0:0 @ 000002b919df9ac0] Task finished with error code: -22 (Invalid argument)
+[vf#0:0 @ 000002b919df9ac0] Terminating thread with return code -22 (Invalid argument)
+[vost#0:0/mjpeg @ 000002b91813a240] [enc:mjpeg @ 000002b9180a50c0] Could not open encoder before EOF
+[vost#0:0/mjpeg @ 000002b91813a240] Task finished with error code: -22 (Invalid argument)
+[vost#0:0/mjpeg @ 000002b91813a240] Terminating thread with return code -22 (Invalid argument)
+[out#0/mjpeg @ 0000018afebbd8c0] Nothing was written into output file, because at least one of its streams received no packets.
+[out#0/mjpeg @ 000002b91814e000] Nothing was written into output file, because at least one of its streams received no packets.
+[VIDEO] WARNING: frame 494 from A4.mp4 unavailable (FFmpeg failed to extract frame 494 from A4.mp4.). Using fallback.
+[VIDEO] WARNING: frame 486 from A4.mp4 unavailable (FFmpeg failed to extract frame 486 from A4.mp4.). Using fallback.
+[mjpeg @ 00000213a27a6b40] Non full-range YUV is non-standard, set strict_std_compliance to at most unofficial to use it.
+[mjpeg @ 00000213a1269740] ff_frame_thread_encoder_init failed
+[vost#0:0/mjpeg @ 00000213a0d4a240] [enc:mjpeg @ 00000213a0cb4d00] Error while opening encoder - maybe incorrect parameters such as bit_rate, rate, width or height.
+[vf#0:0 @ 00000213a1269ac0] Error sending frames to consumers: Invalid argument
+[vf#0:0 @ 00000213a1269ac0] Task finished with error code: -22 (Invalid argument)
+[vf#0:0 @ 00000213a1269ac0] Terminating thread with return code -22 (Invalid argument)
+[vost#0:0/mjpeg @ 00000213a0d4a240] [enc:mjpeg @ 00000213a0cb4d00] Could not open encoder before EOF
+[vost#0:0/mjpeg @ 00000213a0d4a240] Task finished with error code: -22 (Invalid argument)
+[vost#0:0/mjpeg @ 00000213a0d4a240] Terminating thread with return code -22 (Invalid argument)
+[out#0/mjpeg @ 00000213a0d5df00] Nothing was written into output file, because at least one of its streams received no packets.
+[VIDEO] WARNING: frame 506 from A4.mp4 unavailable (FFmpeg failed to extract frame 506 from A4.mp4.). Using fallback.
+[mjpeg @ 0000022dc469ec80] Non full-range YUV is non-standard, set strict_std_compliance to at most unofficial to use it.
+[mjpeg @ 0000022dc3169740] ff_frame_thread_encoder_init failed
+[vost#0:0/mjpeg @ 0000022dc13da240] [enc:mjpeg @ 0000022dc1345780] Error while opening encoder - maybe incorrect parameters such as bit_rate, rate, width or height.
+[vf#0:0 @ 0000022dc3169ac0] Error sending frames to consumers: Invalid argument
+[vf#0:0 @ 0000022dc3169ac0] Task finished with error code: -22 (Invalid argument)
+[vf#0:0 @ 0000022dc3169ac0] Terminating thread with return code -22 (Invalid argument)
+[vost#0:0/mjpeg @ 0000022dc13da240] [enc:mjpeg @ 0000022dc1345780] Could not open encoder before EOF
+[vost#0:0/mjpeg @ 0000022dc13da240] Task finished with error code: -22 (Invalid argument)
+[vost#0:0/mjpeg @ 0000022dc13da240] Terminating thread with return code -22 (Invalid argument)
+[out#0/mjpeg @ 0000022dc13edd00] Nothing was written into output file, because at least one of its streams received no packets.
+[mjpeg @ 0000020eb3264b40] Non full-range YUV is non-standard, set strict_std_compliance to at most unofficial to use it.
+[mjpeg @ 0000020eb31d9740] ff_frame_thread_encoder_init failed
+[vost#0:0/mjpeg @ 0000020eb2c8a240] [enc:mjpeg @ 0000020eb2bf4f40] Error while opening encoder - maybe incorrect parameters such as bit_rate, rate, width or height.
+[vf#0:0 @ 0000020eb31d9ac0] Error sending frames to consumers: Invalid argument
+[vf#0:0 @ 0000020eb31d9ac0] Task finished with error code: -22 (Invalid argument)
+[vf#0:0 @ 0000020eb31d9ac0] Terminating thread with return code -22 (Invalid argument)
+[vost#0:0/mjpeg @ 0000020eb2c8a240] [enc:mjpeg @ 0000020eb2bf4f40] Could not open encoder before EOF
+[vost#0:0/mjpeg @ 0000020eb2c8a240] Task finished with error code: -22 (Invalid argument)
+[vost#0:0/mjpeg @ 0000020eb2c8a240] Terminating thread with return code -22 (Invalid argument)
+[out#0/mjpeg @ 0000020eb2c9d780] Nothing was written into output file, because at least one of its streams received no packets.
+frame=10978 fps=109 q=-0.0 size=   76032KiB time=00:03:02.95 bitrate=3404.5kbits/s speed=1.81x elapsed=0:01:41.08    [VIDEO] WARNING: frame 487 from A4.mp4 unavailable (FFmpeg failed to extract frame 487 from A4.mp4.). Using fallback.
+[VIDEO] WARNING: frame 495 from A4.mp4 unavailable (FFmpeg failed to extract frame 495 from A4.mp4.). Using fallback.
+[mjpeg @ 0000020355231fc0] Non full-range YUV is non-standard, set strict_std_compliance to at most unofficial to use it.
+[mjpeg @ 0000020353cf9740] ff_frame_thread_encoder_init failed
+[vost#0:0/mjpeg @ 00000203538ba240] [enc:mjpeg @ 0000020353824b80] Error while opening encoder - maybe incorrect parameters such as bit_rate, rate, width or height.
+[vf#0:0 @ 0000020353cf9ac0] Error sending frames to consumers: Invalid argument
+[vf#0:0 @ 0000020353cf9ac0] Task finished with error code: -22 (Invalid argument)
+[vf#0:0 @ 0000020353cf9ac0] Terminating thread with return code -22 (Invalid argument)
+[vost#0:0/mjpeg @ 00000203538ba240] [enc:mjpeg @ 0000020353824b80] Could not open encoder before EOF
+[vost#0:0/mjpeg @ 00000203538ba240] Task finished with error code: -22 (Invalid argument)
+[vost#0:0/mjpeg @ 00000203538ba240] Terminating thread with return code -22 (Invalid argument)
+[out#0/mjpeg @ 00000203538ce240] Nothing was written into output file, because at least one of its streams received no packets.
+[VIDEO] WARNING: frame 507 from A4.mp4 unavailable (FFmpeg failed to extract frame 507 from A4.mp4.). Using fallback.
+[mjpeg @ 00000184f29df1c0] Non full-range YUV is non-standard, set strict_std_compliance to at most unofficial to use it.
+[mjpeg @ 00000184f2949740] ff_frame_thread_encoder_init failed
+[vost#0:0/mjpeg @ 00000184f23ca240] [enc:mjpeg @ 00000184f2335600] Error while opening encoder - maybe incorrect parameters such as bit_rate, rate, width or height.
+[vf#0:0 @ 00000184f2949ac0] Error sending frames to consumers: Invalid argument
+[vf#0:0 @ 00000184f2949ac0] Task finished with error code: -22 (Invalid argument)
+[vf#0:0 @ 00000184f2949ac0] Terminating thread with return code -22 (Invalid argument)
+[vost#0:0/mjpeg @ 00000184f23ca240] [enc:mjpeg @ 00000184f2335600] Could not open encoder before EOF
+[vost#0:0/mjpeg @ 00000184f23ca240] Task finished with error code: -22 (Invalid argument)
+[vost#0:0/mjpeg @ 00000184f23ca240] Terminating thread with return code -22 (Invalid argument)
+[out#0/mjpeg @ 00000184f23de340] Nothing was written into output file, because at least one of its streams received no packets.
+[VIDEO] WARNING: frame 496 from A4.mp4 unavailable (FFmpeg failed to extract frame 496 from A4.mp4.). Using fallback.
+[mjpeg @ 0000017b0da61080] Non full-range YUV is non-standard, set strict_std_compliance to at most unofficial to use it.
+[mjpeg @ 0000017b0d319740] ff_frame_thread_encoder_init failed
+[vost#0:0/mjpeg @ 0000017b0ceaa240] [enc:mjpeg @ 0000017b0ce14580] Error while opening encoder - maybe incorrect parameters such as bit_rate, rate, width or height.
+[vf#0:0 @ 0000017b0d319ac0] Error sending frames to consumers: Invalid argument
+[vf#0:0 @ 0000017b0d319ac0] Task finished with error code: -22 (Invalid argument)
+[vf#0:0 @ 0000017b0d319ac0] Terminating thread with return code -22 (Invalid argument)
+[vost#0:0/mjpeg @ 0000017b0ceaa240] [enc:mjpeg @ 0000017b0ce14580] Could not open encoder before EOF
+[vost#0:0/mjpeg @ 0000017b0ceaa240] Task finished with error code: -22 (Invalid argument)
+[vost#0:0/mjpeg @ 0000017b0ceaa240] Terminating thread with return code -22 (Invalid argument)
+[out#0/mjpeg @ 0000017b0cebe000] Nothing was written into output file, because at least one of its streams received no packets.
+[VIDEO] WARNING: frame 508 from A4.mp4 unavailable (FFmpeg failed to extract frame 508 from A4.mp4.). Using fallback.
+[mjpeg @ 000001f0c9e94340] Non full-range YUV is non-standard, set strict_std_compliance to at most unofficial to use it.
+[mjpeg @ 000001f0c8c79740] ff_frame_thread_encoder_init failed
+[vost#0:0/mjpeg @ 000001f0c86ba240] [enc:mjpeg @ 000001f0c8624940] Error while opening encoder - maybe incorrect parameters such as bit_rate, rate, width or height.
+[vf#0:0 @ 000001f0c8c79ac0] Error sending frames to consumers: Invalid argument
+[vf#0:0 @ 000001f0c8c79ac0] Task finished with error code: -22 (Invalid argument)
+[vf#0:0 @ 000001f0c8c79ac0] Terminating thread with return code -22 (Invalid argument)
+[vost#0:0/mjpeg @ 000001f0c86ba240] [enc:mjpeg @ 000001f0c8624940] Could not open encoder before EOF
+[vost#0:0/mjpeg @ 000001f0c86ba240] Task finished with error code: -22 (Invalid argument)
+[vost#0:0/mjpeg @ 000001f0c86ba240] Terminating thread with return code -22 (Invalid argument)
+[out#0/mjpeg @ 000001f0c86cd9c0] Nothing was written into output file, because at least one of its streams received no packets.
+[VIDEO] WARNING: frame 497 from A4.mp4 unavailable (FFmpeg failed to extract frame 497 from A4.mp4.). Using fallback.
+[mjpeg @ 0000023220798e40] Non full-range YUV is non-standard, set strict_std_compliance to at most unofficial to use it.
+[mjpeg @ 000002321e499740] ff_frame_thread_encoder_init failed
+[vost#0:0/mjpeg @ 000002321deca240] [enc:mjpeg @ 000002321de35600] Error while opening encoder - maybe incorrect parameters such as bit_rate, rate, width or height.
+[vf#0:0 @ 000002321e499ac0] Error sending frames to consumers: Invalid argument
+[vf#0:0 @ 000002321e499ac0] Task finished with error code: -22 (Invalid argument)
+[vf#0:0 @ 000002321e499ac0] Terminating thread with return code -22 (Invalid argument)
+[vost#0:0/mjpeg @ 000002321deca240] [enc:mjpeg @ 000002321de35600] Could not open encoder before EOF
+[vost#0:0/mjpeg @ 000002321deca240] Task finished with error code: -22 (Invalid argument)
+[vost#0:0/mjpeg @ 000002321deca240] Terminating thread with return code -22 (Invalid argument)
+[out#0/mjpeg @ 000002321dedd9c0] Nothing was written into output file, because at least one of its streams received no packets.
+[VIDEO] WARNING: frame 509 from A4.mp4 unavailable (FFmpeg failed to extract frame 509 from A4.mp4.). Using fallback.
+[mjpeg @ 000001f0790b9f00] Non full-range YUV is non-standard, set strict_std_compliance to at most unofficial to use it.
+[mjpeg @ 000001f077b89740] ff_frame_thread_encoder_init failed
+[vost#0:0/mjpeg @ 000001f07774a240] [enc:mjpeg @ 000001f0776b3e00] Error while opening encoder - maybe incorrect parameters such as bit_rate, rate, width or height.
+[vf#0:0 @ 000001f077b89ac0] Error sending frames to consumers: Invalid argument
+[vf#0:0 @ 000001f077b89ac0] Task finished with error code: -22 (Invalid argument)
+[vf#0:0 @ 000001f077b89ac0] Terminating thread with return code -22 (Invalid argument)
+[vost#0:0/mjpeg @ 000001f07774a240] [enc:mjpeg @ 000001f0776b3e00] Could not open encoder before EOF
+[vost#0:0/mjpeg @ 000001f07774a240] Task finished with error code: -22 (Invalid argument)
+[vost#0:0/mjpeg @ 000001f07774a240] Terminating thread with return code -22 (Invalid argument)
+[out#0/mjpeg @ 000001f07775d680] Nothing was written into output file, because at least one of its streams received no packets.
+[VIDEO] WARNING: frame 498 from A4.mp4 unavailable (FFmpeg failed to extract frame 498 from A4.mp4.). Using fallback.
+[mjpeg @ 000002ace01990c0] Non full-range YUV is non-standard, set strict_std_compliance to at most unofficial to use it.
+[mjpeg @ 000002acdec69740] ff_frame_thread_encoder_init failed
+[vost#0:0/mjpeg @ 000002acde67a240] [enc:mjpeg @ 000002acde5e56c0] Error while opening encoder - maybe incorrect parameters such as bit_rate, rate, width or height.
+[vf#0:0 @ 000002acdec69ac0] Error sending frames to consumers: Invalid argument
+[vf#0:0 @ 000002acdec69ac0] Task finished with error code: -22 (Invalid argument)
+[vf#0:0 @ 000002acdec69ac0] Terminating thread with return code -22 (Invalid argument)
+[vost#0:0/mjpeg @ 000002acde67a240] [enc:mjpeg @ 000002acde5e56c0] Could not open encoder before EOF
+[vost#0:0/mjpeg @ 000002acde67a240] Task finished with error code: -22 (Invalid argument)
+[vost#0:0/mjpeg @ 000002acde67a240] Terminating thread with return code -22 (Invalid argument)
+[out#0/mjpeg @ 000002acde68e140] Nothing was written into output file, because at least one of its streams received no packets.
+[VIDEO] WARNING: frame 510 from A4.mp4 unavailable (FFmpeg failed to extract frame 510 from A4.mp4.). Using fallback.
+[mjpeg @ 000002214afd1cc0] Non full-range YUV is non-standard, set strict_std_compliance to at most unofficial to use it.
+[mjpeg @ 00000221494f9740] ff_frame_thread_encoder_init failed
+[vost#0:0/mjpeg @ 0000022148f5a240] [enc:mjpeg @ 0000022148ec4ac0] Error while opening encoder - maybe incorrect parameters such as bit_rate, rate, width or height.
+[vf#0:0 @ 00000221494f9ac0] Error sending frames to consumers: Invalid argument
+[vf#0:0 @ 00000221494f9ac0] Task finished with error code: -22 (Invalid argument)
+[vf#0:0 @ 00000221494f9ac0] Terminating thread with return code -22 (Invalid argument)
+[vost#0:0/mjpeg @ 0000022148f5a240] [enc:mjpeg @ 0000022148ec4ac0] Could not open encoder before EOF
+[vost#0:0/mjpeg @ 0000022148f5a240] Task finished with error code: -22 (Invalid argument)
+[vost#0:0/mjpeg @ 0000022148f5a240] Terminating thread with return code -22 (Invalid argument)
+[out#0/mjpeg @ 0000022148f6e000] Nothing was written into output file, because at least one of its streams received no packets.
+[VIDEO] WARNING: frame 499 from A4.mp4 unavailable (FFmpeg failed to extract frame 499 from A4.mp4.). Using fallback.
+[mjpeg @ 0000025afe376800] Non full-range YUV is non-standard, set strict_std_compliance to at most unofficial to use it.
+[mjpeg @ 0000025afce49740] ff_frame_thread_encoder_init failed
+[vost#0:0/mjpeg @ 0000025afc98a240] [enc:mjpeg @ 0000025afc8f4f40] Error while opening encoder - maybe incorrect parameters such as bit_rate, rate, width or height.
+[vf#0:0 @ 0000025afce49ac0] Error sending frames to consumers: Invalid argument
+[vf#0:0 @ 0000025afce49ac0] Task finished with error code: -22 (Invalid argument)
+[vf#0:0 @ 0000025afce49ac0] Terminating thread with return code -22 (Invalid argument)
+[vost#0:0/mjpeg @ 0000025afc98a240] [enc:mjpeg @ 0000025afc8f4f40] Could not open encoder before EOF
+[vost#0:0/mjpeg @ 0000025afc98a240] Task finished with error code: -22 (Invalid argument)
+[vost#0:0/mjpeg @ 0000025afc98a240] Terminating thread with return code -22 (Invalid argument)
+[out#0/mjpeg @ 0000025afc99e140] Nothing was written into output file, because at least one of its streams received no packets.
+[VIDEO] WARNING: frame 511 from A4.mp4 unavailable (FFmpeg failed to extract frame 511 from A4.mp4.). Using fallback.
+
+[VIDEO] Frame 11004 / 12343
+[PROFILER] Memory � Video rendering: 1906 MB used / 3916 JVM maximum
+[FRAME CACHE] Frames=5755 | RAM=350.27/512.00 MB | Hits=34056 | Misses=32 | Evictions=0
+frame=11987 fps=108 q=-0.0 size=   82944KiB time=00:03:19.76 bitrate=3401.4kbits/s speed=1.79x elapsed=0:01:51.40
+[VIDEO] Frame 12000 / 12343
+[PROFILER] Memory � Video rendering: 1292 MB used / 3916 JVM maximum
+[FRAME CACHE] Frames=5755 | RAM=350.27/512.00 MB | Hits=37252 | Misses=32 | Evictions=0
+[out#0/mp4 @ 0000023ad83b8bc0] video:80989KiB audio:4820KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: 0.265056%
+frame=12343 fps=108 q=-0.0 Lsize=   86036KiB time=00:03:25.69 bitrate=3426.4kbits/s speed= 1.8x elapsed=0:01:54.57
+[aac @ 0000023ada023280] Qavg: 1329.799
+
+[FRAME CACHE] Final: Frames=5755 | RAM=350.27/512.00 MB | Hits=38426 | Misses=32 | Evictions=0
+[PROFILER] Memory � After Rendering and encoding final MP4: 1747 MB used / 3916 JVM maximum
+[PROFILER] Completed: Rendering and encoding final MP4 in 02:01.986
+
+[CLEANUP] Removing temporary files...
+[CLEANUP] Temporary files removed.
+
+=== PROCESSING COMPLETED SUCCESSFULLY ===
+Output: .\FL-vSampler\output.mp4
